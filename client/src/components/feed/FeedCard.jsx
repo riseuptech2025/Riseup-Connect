@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, MessageCircle, Share, Bookmark, Code, Trash2 } from 'lucide-react';
+import { Heart, MessageCircle, Share, Bookmark, Code, Trash2, Copy, Twitter, Facebook, Link2 } from 'lucide-react';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,6 +10,7 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
   const { user, isAuthenticated } = useAuth();
 
   // Safe user data access
@@ -59,12 +60,52 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async (platform = 'copy') => {
     if (!isAuthenticated) {
       alert('Please login to share posts');
       return;
     }
-    // TODO: Implement share functionality
+
+    const postUrl = `${window.location.origin}/post/${post._id}`;
+    const shareText = `Check out this post by ${userName}: ${postContent.substring(0, 100)}...`;
+
+    try {
+      switch (platform) {
+        case 'copy':
+          await navigator.clipboard.writeText(postUrl);
+          alert('Post link copied to clipboard!');
+          break;
+        
+        case 'twitter':
+          window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(postUrl)}`, '_blank');
+          break;
+        
+        case 'facebook':
+          window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(postUrl)}`, '_blank');
+          break;
+        
+        case 'linkedin':
+          window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(postUrl)}`, '_blank');
+          break;
+        
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+      // Fallback for copying
+      if (platform === 'copy') {
+        const textArea = document.createElement('textarea');
+        textArea.value = postUrl;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('Post link copied to clipboard!');
+      }
+    }
+    
+    setShowShareMenu(false);
   };
 
   const handleBookmark = () => {
@@ -84,6 +125,13 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
       }
     }
   };
+
+  const shareOptions = [
+    { platform: 'copy', icon: Copy, label: 'Copy Link', color: 'text-gray-600' },
+    { platform: 'twitter', icon: Twitter, label: 'Twitter', color: 'text-blue-400' },
+    { platform: 'facebook', icon: Facebook, label: 'Facebook', color: 'text-blue-600' },
+    { platform: 'linkedin', icon: Link2, label: 'LinkedIn', color: 'text-blue-700' },
+  ];
 
   return (
     <motion.div
@@ -108,15 +156,48 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
             </div>
           </div>
           
-          {isOwnPost && (
-            <button
-              onClick={handleDelete}
-              className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-              title="Delete post"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
+          <div className="flex items-center space-x-2">
+            {/* Share Button */}
+            <div className="relative">
+              <button
+                onClick={() => setShowShareMenu(!showShareMenu)}
+                className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                title="Share post"
+              >
+                <Share className="h-4 w-4" />
+              </button>
+              
+              {/* Share Dropdown Menu */}
+              {showShareMenu && (
+                <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 w-48 py-2">
+                  {shareOptions.map((option) => {
+                    const IconComponent = option.icon;
+                    return (
+                      <button
+                        key={option.platform}
+                        onClick={() => handleShare(option.platform)}
+                        className="flex items-center space-x-3 w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <IconComponent className={`h-4 w-4 ${option.color}`} />
+                        <span>{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Delete Button (only for own posts) */}
+            {isOwnPost && (
+              <button
+                onClick={handleDelete}
+                className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                title="Delete post"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -128,12 +209,23 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
           </p>
         )}
         
+        {/* Post Image */}
+        {post?.image && (
+          <div className="mb-4">
+            <img
+              src={post.image}
+              alt="Post content"
+              className="rounded-lg w-full h-auto object-cover max-h-96"
+            />
+          </div>
+        )}
+        
         {post?.codeSnippet && (
           <div className="mb-4">
             <div className="flex items-center space-x-2 mb-2">
               <Code className="h-4 w-4 text-gray-500" />
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                Code Snippet
+                Code Snippet • {post.codeSnippet.language || 'javascript'}
               </span>
             </div>
             <SyntaxHighlighter
@@ -145,14 +237,6 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
               {post.codeSnippet.code || ''}
             </SyntaxHighlighter>
           </div>
-        )}
-
-        {post?.image && (
-          <img
-            src={post.image}
-            alt="Post content"
-            className="rounded-lg w-full h-auto object-cover mb-4"
-          />
         )}
       </div>
 
@@ -191,7 +275,7 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
             </button>
 
             <button
-              onClick={handleShare}
+              onClick={() => setShowShareMenu(!showShareMenu)}
               className="flex items-center space-x-2 px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
               <Share className="h-5 w-5" />

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'https://riseup-connect.onrender.com/api';
+const API_URL = 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
@@ -125,11 +125,54 @@ export const questionsAPI = {
 
 // stories API
 export const storiesAPI = {
-  getStories: () => axios.get('/api/stories'),
-  createStory: (data) => axios.post('/api/stories', data),
-  likeStory: (storyId) => axios.post(`/api/stories/${storyId}/like`),
-  addComment: (storyId, content) => axios.post(`/api/stories/${storyId}/comments`, { content }),
-  deleteStory: (storyId) => axios.delete(`/api/stories/${storyId}`)
+  getStories: (page = 1, limit = 20) => 
+    api.get(`/stories?page=${page}&limit=${limit}`),
+  
+  getFollowingStories: (page = 1, limit = 20) => 
+    api.get(`/stories/following?page=${page}&limit=${limit}`),
+  
+  getUserStories: (userId = null) => 
+    api.get(userId ? `/stories/user/${userId}` : '/stories/user'),
+  
+  getStory: (storyId) => 
+    api.get(`/stories/${storyId}`),
+  
+  createStory: (storyData) => 
+    api.post('/stories', storyData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+  
+  updateStory: (storyId, storyData) => 
+    api.put(`/stories/${storyId}`, storyData),
+  
+  deleteStory: (storyId) => 
+    api.delete(`/stories/${storyId}`),
+  
+  likeStory: (storyId) => 
+    api.post(`/stories/${storyId}/like`),
+  
+  addComment: (storyId, content) => 
+    api.post(`/stories/${storyId}/comments`, { content }),
+  
+  deleteComment: (storyId, commentId) => 
+    api.delete(`/stories/${storyId}/comments/${commentId}`),
+  
+  getCategories: () => 
+    api.get('/stories/categories/all')
 };
+
+
+// services/api.js - Add these to your API exports
+export const uploadAPI = {
+  uploadProfileImage: (formData) => api.post('/upload/profile-image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  uploadCoverImage: (formData) => api.post('/upload/cover-image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  removeProfileImage: () => api.delete('/upload/profile-image'),
+  removeCoverImage: () => api.delete('/upload/cover-image')
+};
+
 
 export default api;

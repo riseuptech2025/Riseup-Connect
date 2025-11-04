@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Image, Code, Smile, Send, X } from 'lucide-react';
+import { Image, Code, Smile, Send, X, Upload } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { postsAPI } from '../../services/api';
 
@@ -9,13 +9,54 @@ const CreatePost = ({ onPostCreated }) => {
   const [content, setContent] = useState('');
   const [postType, setPostType] = useState('text');
   const [codeSnippet, setCodeSnippet] = useState({ language: 'javascript', code: '' });
+  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef(null);
   const { user } = useAuth();
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file (JPEG, PNG, GIF, etc.)');
+        return;
+      }
+
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+
+      setImage(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeImage = () => {
+    setImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerImageUpload = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!content.trim() && !codeSnippet.code.trim()) {
+    if (!content.trim() && !codeSnippet.code.trim() && !image) {
       alert('Please add some content to your post');
       return;
     }
@@ -23,18 +64,35 @@ const CreatePost = ({ onPostCreated }) => {
     try {
       setLoading(true);
       
-      const postData = {
-        content: content.trim(),
-        ...(postType === 'code' && { codeSnippet }),
-        isPublic: true
-      };
+      // Use FormData for file uploads
+      const formData = new FormData();
+      formData.append('content', content.trim());
+      formData.append('isPublic', 'true');
+      
+      if (postType === 'code') {
+        formData.append('codeSnippet', JSON.stringify(codeSnippet));
+      }
+      
+      if (image) {
+        formData.append('image', image);
+      }
 
-      const response = await postsAPI.createPost(postData);
+      const response = await postsAPI.createPost(formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       
       if (response.data.success) {
         onPostCreated(response.data.data);
+        // Reset form
         setContent('');
         setCodeSnippet({ language: 'javascript', code: '' });
+        setImage(null);
+        setImagePreview(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
         setIsOpen(false);
       }
     } catch (error) {
@@ -158,16 +216,51 @@ const CreatePost = ({ onPostCreated }) => {
           </div>
         )}
 
+        {/* Image Preview */}
+        {imagePreview && (
+          <div className="mt-4 relative">
+            <img 
+              src={imagePreview} 
+              alt="Preview" 
+              className="rounded-lg max-h-64 w-full object-cover"
+            />
+            <button
+              type="button"
+              onClick={removeImage}
+              className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm hover:bg-red-600 transition-colors"
+              disabled={loading}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-2">
             <button
               type="button"
-              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              onClick={triggerImageUpload}
+              className={`p-2 rounded-lg transition-colors ${
+                image 
+                  ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
               disabled={loading}
+              title="Add image"
             >
               <Image className="h-5 w-5" />
             </button>
+            
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageUpload}
+              accept="image/*"
+              className="hidden"
+              disabled={loading}
+            />
+
             <button
               type="button"
               className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -186,7 +279,7 @@ const CreatePost = ({ onPostCreated }) => {
 
           <button
             type="submit"
-            disabled={(!content.trim() && !codeSnippet.code.trim()) || loading}
+            disabled={(!content.trim() && !codeSnippet.code.trim() && !image) || loading}
             className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-2 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (

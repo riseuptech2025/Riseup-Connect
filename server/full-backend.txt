@@ -1,0 +1,3065 @@
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
+  } catch (error) {
+    console.error('Database connection error:', error);
+    process.exit(1);
+  }
+};
+
+module.exports = connectDB;
+
+
+const User = require('../models/User');
+const generateToken = require('../utils/generateToken');
+
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+const registerUser = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email'
+      });
+    }
+
+    // Create user
+    const user = await User.create({
+      name,
+      email,
+      password
+    });
+
+    if (user) {
+      res.status(201).json({
+        success: true,
+        data: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          bio: user.bio,
+          token: generateToken(user._id)
+        },
+        message: 'User registered successfully'
+      });
+    }
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during registration'
+    });
+  }
+};
+
+// @desc    Authenticate user & get token
+// @route   POST /api/auth/login
+// @access  Public
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check for user
+    const user = await User.findOne({ email }).select('+password');
+
+    if (user && (await user.matchPassword(password))) {
+      // Update last seen
+      await user.updateLastSeen();
+
+      res.json({
+        success: true,
+        data: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          bio: user.bio,
+          location: user.location,
+          website: user.website,
+          company: user.company,
+          position: user.position,
+          education: user.education,
+          skills: user.skills,
+          isPrivate: user.isPrivate,
+          followers: user.followers,
+          following: user.following,
+          connections: user.connections,
+          postsCount: user.postsCount,
+          token: generateToken(user._id)
+        },
+        message: 'Login successful'
+      });
+    } else {
+      res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during login'
+    });
+  }
+};
+
+// @desc    Get current user profile
+// @route   GET /api/auth/me
+// @access  Private
+const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('followers', 'name avatar')
+      .populate('following', 'name avatar')
+      .populate('connections', 'name avatar');
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+module.exports = {
+  registerUser,
+  loginUser,
+  getMe
+};
+
+
+const Connection = require('../models/Connection');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+
+// @desc    Send connection request
+// @route   POST /api/connections/request/:userId
+// @access  Private
+const sendConnectionRequest = async (req, res) => {
+  try {
+    const toUser = await User.findById(req.params.userId);
+
+    if (!toUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (req.params.userId === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot send connection request to yourself'
+      });
+    }
+
+    // Check if connection already exists in any direction
+    const existingConnection = await Connection.findOne({
+      $or: [
+        { fromUser: req.user._id, toUser: req.params.userId },
+        { fromUser: req.params.userId, toUser: req.user._id }
+      ]
+    });
+
+    if (existingConnection) {
+      let message = 'Connection already exists';
+      if (existingConnection.status === 'pending') {
+        if (existingConnection.fromUser.toString() === req.user._id.toString()) {
+          message = 'Connection request already sent';
+        } else {
+          message = 'This user has already sent you a connection request';
+        }
+      } else if (existingConnection.status === 'accepted') {
+        message = 'You are already connected with this user';
+      }
+
+      return res.status(400).json({
+        success: false,
+        message
+      });
+    }
+
+    // Create connection request
+    const connection = await Connection.create({
+      fromUser: req.user._id,
+      toUser: req.params.userId
+    });
+
+    // Create notification
+    await Notification.create({
+      user: req.params.userId,
+      fromUser: req.user._id,
+      type: 'connection',
+      message: `${req.user.name} sent you a connection request`
+    });
+
+    const populatedConnection = await Connection.findById(connection._id)
+      .populate('fromUser', 'name avatar')
+      .populate('toUser', 'name avatar');
+
+    res.status(201).json({
+      success: true,
+      data: populatedConnection,
+      message: 'Connection request sent successfully'
+    });
+  } catch (error) {
+    console.error('Send connection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Accept connection request
+// @route   PUT /api/connections/accept/:connectionId
+// @access  Private
+const acceptConnectionRequest = async (req, res) => {
+  try {
+    const connection = await Connection.findById(req.params.connectionId)
+      .populate('fromUser', 'name avatar')
+      .populate('toUser', 'name avatar');
+
+    if (!connection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Connection request not found'
+      });
+    }
+
+    if (connection.toUser._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to accept this connection'
+      });
+    }
+
+    if (connection.status === 'accepted') {
+      return res.status(400).json({
+        success: false,
+        message: 'Connection already accepted'
+      });
+    }
+
+    // Update connection status
+    connection.status = 'accepted';
+    await connection.save();
+
+    // Add to connections list for both users
+    await User.findByIdAndUpdate(connection.fromUser._id, {
+      $addToSet: { connections: connection.toUser._id }
+    });
+    await User.findByIdAndUpdate(connection.toUser._id, {
+      $addToSet: { connections: connection.fromUser._id }
+    });
+
+    // Create notification for the requester
+    await Notification.create({
+      user: connection.fromUser._id,
+      fromUser: req.user._id,
+      type: 'connection',
+      message: `${req.user.name} accepted your connection request`
+    });
+
+    res.json({
+      success: true,
+      data: connection,
+      message: 'Connection request accepted'
+    });
+  } catch (error) {
+    console.error('Accept connection error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get user connections
+// @route   GET /api/connections
+// @access  Private
+const getConnections = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('connections', 'name avatar position company location')
+      .populate('followers', 'name avatar position company location')
+      .populate('following', 'name avatar position company location');
+
+    // Get pending connection requests
+    const pendingRequests = await Connection.find({
+      toUser: req.user._id,
+      status: 'pending'
+    }).populate('fromUser', 'name avatar position company location');
+
+    res.json({
+      success: true,
+      data: {
+        connections: user.connections || [],
+        followers: user.followers || [],
+        following: user.following || [],
+        pendingRequests: pendingRequests || []
+      }
+    });
+  } catch (error) {
+    console.error('Get connections error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get suggested connections
+// @route   GET /api/connections/suggestions
+// @access  Private
+const getSuggestedConnections = async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user._id);
+    
+    // Get users who are not already connected, not the current user, and not already requested
+    const existingConnections = currentUser.connections || [];
+    const existingFollowing = currentUser.following || [];
+    
+    // Get users that current user has sent connection requests to
+    const sentRequests = await Connection.find({
+      fromUser: req.user._id,
+      status: 'pending'
+    }).select('toUser');
+    
+    const sentRequestIds = sentRequests.map(req => req.toUser.toString());
+    
+    // Get users that have sent connection requests to current user
+    const receivedRequests = await Connection.find({
+      toUser: req.user._id,
+      status: 'pending'
+    }).select('fromUser');
+    
+    const receivedRequestIds = receivedRequests.map(req => req.fromUser.toString());
+
+    const excludedUsers = [
+      req.user._id,
+      ...existingConnections.map(conn => conn._id || conn),
+      ...existingFollowing.map(follow => follow._id || follow),
+      ...sentRequestIds,
+      ...receivedRequestIds
+    ];
+
+    const suggestedUsers = await User.find({
+      _id: { $nin: excludedUsers }
+    })
+    .select('name avatar position company location followers following')
+    .limit(10);
+
+    res.json({
+      success: true,
+      data: suggestedUsers
+    });
+  } catch (error) {
+    console.error('Get suggested connections error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get pending connection requests
+// @route   GET /api/connections/pending
+// @access  Private
+const getPendingRequests = async (req, res) => {
+  try {
+    const pendingRequests = await Connection.find({
+      toUser: req.user._id,
+      status: 'pending'
+    }).populate('fromUser', 'name avatar position company location');
+
+    res.json({
+      success: true,
+      data: pendingRequests
+    });
+  } catch (error) {
+    console.error('Get pending requests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+module.exports = {
+  sendConnectionRequest,
+  acceptConnectionRequest,
+  getConnections,
+  getSuggestedConnections,
+  getPendingRequests
+};
+
+
+const Conversation = require('../models/Conversation');
+const Message = require('../models/Message');
+const User = require('../models/User');
+
+// @desc    Create a new conversation
+// @route   POST /api/messages/conversations
+// @access  Private
+const createConversation = async (req, res) => {
+  try {
+    const { participantId } = req.body;
+
+    console.log('Creating conversation between:', req.user._id, 'and', participantId);
+
+    if (!participantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Participant ID is required'
+      });
+    }
+
+    if (participantId === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot create conversation with yourself'
+      });
+    }
+
+    // Check if participant exists
+    const participant = await User.findById(participantId);
+    if (!participant) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if conversation already exists (simplified without unique constraint)
+    const existingConversation = await Conversation.findOne({
+      isGroup: false,
+      participants: { 
+        $all: [req.user._id, participantId],
+        $size: 2
+      }
+    })
+    .populate('participants', 'name avatar')
+    .populate('lastMessage');
+
+    if (existingConversation) {
+      console.log('Conversation already exists:', existingConversation._id);
+      return res.json({
+        success: true,
+        data: existingConversation,
+        message: 'Conversation already exists'
+      });
+    }
+
+    // Create new conversation
+    const conversation = await Conversation.create({
+      participants: [req.user._id, participantId],
+      createdBy: req.user._id,
+      isGroup: false
+    });
+
+    console.log('New conversation created:', conversation._id);
+
+    // Populate the conversation with user data
+    const populatedConversation = await Conversation.findById(conversation._id)
+      .populate('participants', 'name avatar')
+      .populate('lastMessage');
+
+    res.status(201).json({
+      success: true,
+      data: populatedConversation,
+      message: 'Conversation created successfully'
+    });
+  } catch (error) {
+    console.error('Create conversation error:', error);
+    
+    // Handle duplicate key error (if unique constraint still exists)
+    if (error.code === 11000) {
+      // Try to find the existing conversation
+      try {
+        const existingConversation = await Conversation.findOne({
+          participants: { $all: [req.user._id, req.body.participantId] }
+        })
+        .populate('participants', 'name avatar')
+        .populate('lastMessage');
+
+        if (existingConversation) {
+          return res.json({
+            success: true,
+            data: existingConversation,
+            message: 'Conversation already exists'
+          });
+        }
+      } catch (findError) {
+        console.error('Error finding existing conversation:', findError);
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+// @desc    Get user conversations
+// @route   GET /api/messages/conversations
+// @access  Private
+const getConversations = async (req, res) => {
+  try {
+    const conversations = await Conversation.find({
+      participants: req.user._id
+    })
+    .populate('participants', 'name avatar isOnline lastSeen')
+    .populate('lastMessage')
+    .sort({ updatedAt: -1 });
+
+    res.json({
+      success: true,
+      data: conversations
+    });
+  } catch (error) {
+    console.error('Get conversations error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get messages for a conversation
+// @route   GET /api/messages/conversations/:conversationId/messages
+// @access  Private
+const getMessages = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    // Check if user is part of the conversation
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: req.user._id
+    });
+
+    if (!conversation) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view these messages'
+      });
+    }
+
+    const messages = await Message.find({ conversation: conversationId })
+      .populate('sender', 'name avatar')
+      .sort({ createdAt: 1 }); // Return in chronological order
+
+    res.json({
+      success: true,
+      data: messages
+    });
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Send a message
+// @route   POST /api/messages/conversations/:conversationId/messages
+// @access  Private
+const sendMessage = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { content } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message content is required'
+      });
+    }
+
+    // Check if user is part of the conversation
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: req.user._id
+    });
+
+    if (!conversation) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to send messages in this conversation'
+      });
+    }
+
+    const message = await Message.create({
+      conversation: conversationId,
+      sender: req.user._id,
+      content: content.trim()
+    });
+
+    const populatedMessage = await Message.findById(message._id)
+      .populate('sender', 'name avatar');
+
+    res.status(201).json({
+      success: true,
+      data: populatedMessage
+    });
+  } catch (error) {
+    console.error('Send message error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+module.exports = {
+  getConversations,
+  getMessages,
+  sendMessage,
+  createConversation
+};
+
+
+const Notification = require('../models/Notification');
+const User = require('../models/User');
+const Post = require('../models/Post');
+
+// @desc    Get user notifications
+// @route   GET /api/notifications
+// @access  Private
+const getNotifications = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const notifications = await Notification.find({ user: req.user._id })
+      .populate('fromUser', 'name avatar')
+      .populate('post', 'content')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Notification.countDocuments({ user: req.user._id });
+    const unreadCount = await Notification.countDocuments({ 
+      user: req.user._id, 
+      isRead: false 
+    });
+
+    res.json({
+      success: true,
+      data: notifications,
+      pagination: {
+        page,
+        pages: Math.ceil(total / limit),
+        total,
+        unreadCount
+      }
+    });
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Mark notification as read
+// @route   PUT /api/notifications/:notificationId/read
+// @access  Private
+const markAsRead = async (req, res) => {
+  try {
+    const notification = await Notification.findOne({
+      _id: req.params.notificationId,
+      user: req.user._id
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    notification.isRead = true;
+    await notification.save();
+
+    res.json({
+      success: true,
+      data: notification,
+      message: 'Notification marked as read'
+    });
+  } catch (error) {
+    console.error('Mark as read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Mark all notifications as read
+// @route   PUT /api/notifications/read-all
+// @access  Private
+const markAllAsRead = async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { user: req.user._id, isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    const unreadCount = await Notification.countDocuments({ 
+      user: req.user._id, 
+      isRead: false 
+    });
+
+    res.json({
+      success: true,
+      data: { unreadCount },
+      message: 'All notifications marked as read'
+    });
+  } catch (error) {
+    console.error('Mark all as read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Delete a notification
+// @route   DELETE /api/notifications/:notificationId
+// @access  Private
+const deleteNotification = async (req, res) => {
+  try {
+    const notification = await Notification.findOneAndDelete({
+      _id: req.params.notificationId,
+      user: req.user._id
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    const unreadCount = await Notification.countDocuments({ 
+      user: req.user._id, 
+      isRead: false 
+    });
+
+    res.json({
+      success: true,
+      data: { unreadCount },
+      message: 'Notification deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get notification count
+// @route   GET /api/notifications/count
+// @access  Private
+const getNotificationCount = async (req, res) => {
+  try {
+    const unreadCount = await Notification.countDocuments({ 
+      user: req.user._id, 
+      isRead: false 
+    });
+
+    res.json({
+      success: true,
+      data: { unreadCount }
+    });
+  } catch (error) {
+    console.error('Get notification count error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+module.exports = {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  getNotificationCount
+};
+
+
+const Post = require('../models/Post');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+
+// @desc    Create a new post
+// @route   POST /api/posts
+// @access  Private
+const createPost = async (req, res) => {
+  try {
+    const { content, codeSnippet, image, tags, isPublic } = req.body;
+
+    const post = await Post.create({
+      user: req.user._id,
+      content,
+      codeSnippet,
+      image,
+      tags,
+      isPublic
+    });
+
+    const populatedPost = await Post.findById(post._id)
+      .populate('user', 'name avatar')
+      .populate('likes', 'name avatar')
+      .populate('comments.user', 'name avatar');
+
+    res.status(201).json({
+      success: true,
+      data: populatedPost,
+      message: 'Post created successfully'
+    });
+  } catch (error) {
+    console.error('Create post error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during post creation'
+    });
+  }
+};
+
+// @desc    Get all posts (For You feed)
+// @route   GET /api/posts
+// @access  Private
+const getPosts = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const posts = await Post.find({ isPublic: true })
+      .populate('user', 'name avatar')
+      .populate('likes', 'name avatar')
+      .populate('comments.user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Post.countDocuments({ isPublic: true });
+
+    res.json({
+      success: true,
+      data: posts,
+      pagination: {
+        page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    console.error('Get posts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get following posts
+// @route   GET /api/posts/following
+// @access  Private
+const getFollowingPosts = async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user._id);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const posts = await Post.find({
+      $or: [
+        { user: { $in: currentUser.following } },
+        { user: req.user._id }
+      ],
+      isPublic: true
+    })
+      .populate('user', 'name avatar')
+      .populate('likes', 'name avatar')
+      .populate('comments.user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Post.countDocuments({
+      $or: [
+        { user: { $in: currentUser.following } },
+        { user: req.user._id }
+      ],
+      isPublic: true
+    });
+
+    res.json({
+      success: true,
+      data: posts,
+      pagination: {
+        page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    console.error('Get following posts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Like/Unlike a post
+// @route   POST /api/posts/:postId/like
+// @access  Private
+const likePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.postId);
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    const isLiked = post.likes.includes(req.user._id);
+
+    if (isLiked) {
+      // Unlike
+      await Post.findByIdAndUpdate(req.params.postId, {
+        $pull: { likes: req.user._id }
+      });
+
+      res.json({
+        success: true,
+        message: 'Post unliked successfully',
+        isLiked: false
+      });
+    } else {
+      // Like
+      await Post.findByIdAndUpdate(req.params.postId, {
+        $addToSet: { likes: req.user._id }
+      });
+
+      // Create notification if not the post owner
+      if (post.user.toString() !== req.user._id.toString()) {
+        await Notification.create({
+          user: post.user,
+          fromUser: req.user._id,
+          type: 'like',
+          post: post._id
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Post liked successfully',
+        isLiked: true
+      });
+    }
+  } catch (error) {
+    console.error('Like post error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Add comment to post
+// @route   POST /api/posts/:postId/comment
+// @access  Private
+const addComment = async (req, res) => {
+  try {
+    const { content } = req.body;
+
+    const post = await Post.findById(req.params.postId);
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    const comment = {
+      user: req.user._id,
+      content
+    };
+
+    await Post.findByIdAndUpdate(req.params.postId, {
+      $push: { comments: comment }
+    });
+
+    // Create notification if not the post owner
+    if (post.user.toString() !== req.user._id.toString()) {
+      await Notification.create({
+        user: post.user,
+        fromUser: req.user._id,
+        type: 'comment',
+        post: post._id,
+        comment: content
+      });
+    }
+
+    const updatedPost = await Post.findById(req.params.postId)
+      .populate('user', 'name avatar')
+      .populate('likes', 'name avatar')
+      .populate('comments.user', 'name avatar');
+
+    res.json({
+      success: true,
+      data: updatedPost,
+      message: 'Comment added successfully'
+    });
+  } catch (error) {
+    console.error('Add comment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Delete a post
+// @route   DELETE /api/posts/:postId
+// @access  Private
+const deletePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.postId);
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    // Check if user owns the post
+    if (post.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this post'
+      });
+    }
+
+    await Post.findByIdAndDelete(req.params.postId);
+
+    res.json({
+      success: true,
+      message: 'Post deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete post error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+module.exports = {
+  createPost,
+  getPosts,
+  getFollowingPosts,
+  likePost,
+  addComment,
+  deletePost
+};
+
+
+const Question = require('../models/Question');
+const asyncHandler = require('express-async-handler');
+
+// @desc    Get all questions
+// @route   GET /api/questions
+// @access  Public
+const getQuestions = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const filter = req.query.filter || 'all';
+  const userId = req.user?._id;
+
+  const result = await Question.getQuestions(page, limit, filter, userId);
+
+  res.json({
+    success: true,
+    data: result
+  });
+});
+
+// @desc    Get single question
+// @route   GET /api/questions/:id
+// @access  Public
+const getQuestion = asyncHandler(async (req, res) => {
+  const question = await Question.findById(req.params.id)
+    .populate('user', 'name avatar')
+    .populate('answers.user', 'name avatar')
+    .populate('likes', 'name')
+    .populate('bookmarks', 'name');
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  // Increment view count
+  question.views += 1;
+  await question.save();
+
+  // Add computed fields for the requesting user
+  if (req.user) {
+    question._doc.isLiked = question.isLikedBy(req.user._id);
+    question._doc.isBookmarked = question.isBookmarkedBy(req.user._id);
+    
+    // Check if user liked each answer
+    question.answers.forEach(answer => {
+      answer._doc.isLiked = answer.likes.includes(req.user._id);
+    });
+  }
+
+  res.json({
+    success: true,
+    data: question
+  });
+});
+
+// @desc    Create new question
+// @route   POST /api/questions
+// @access  Private
+const createQuestion = asyncHandler(async (req, res) => {
+  const { title, content, tags } = req.body;
+
+  if (!title || !content) {
+    return res.status(400).json({
+      success: false,
+      message: 'Title and content are required'
+    });
+  }
+
+  const question = await Question.create({
+    title,
+    content,
+    tags: tags || [],
+    user: req.user._id
+  });
+
+  await question.populate('user', 'name avatar');
+
+  res.status(201).json({
+    success: true,
+    data: question
+  });
+});
+
+// @desc    Update question
+// @route   PUT /api/questions/:id
+// @access  Private
+const updateQuestion = asyncHandler(async (req, res) => {
+  let question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  // Check if user owns the question
+  if (question.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Not authorized to update this question'
+    });
+  }
+
+  question = await Question.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    { new: true, runValidators: true }
+  ).populate('user', 'name avatar');
+
+  res.json({
+    success: true,
+    data: question
+  });
+});
+
+// @desc    Delete question
+// @route   DELETE /api/questions/:id
+// @access  Private
+const deleteQuestion = asyncHandler(async (req, res) => {
+  const question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  // Check if user owns the question
+  if (question.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Not authorized to delete this question'
+    });
+  }
+
+  await Question.findByIdAndDelete(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Question deleted successfully'
+  });
+});
+
+// @desc    Like/Unlike question
+// @route   POST /api/questions/:id/like
+// @access  Private
+const likeQuestion = asyncHandler(async (req, res) => {
+  const question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  const hasLiked = question.likes.includes(req.user._id);
+
+  if (hasLiked) {
+    // Unlike
+    question.likes.pull(req.user._id);
+  } else {
+    // Like
+    question.likes.push(req.user._id);
+  }
+
+  await question.save();
+
+  res.json({
+    success: true,
+    data: {
+      likes: question.likes.length,
+      isLiked: !hasLiked
+    }
+  });
+});
+
+// @desc    Bookmark/Unbookmark question
+// @route   POST /api/questions/:id/bookmark
+// @access  Private
+const bookmarkQuestion = asyncHandler(async (req, res) => {
+  const question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  const hasBookmarked = question.bookmarks.includes(req.user._id);
+
+  if (hasBookmarked) {
+    // Remove bookmark
+    question.bookmarks.pull(req.user._id);
+  } else {
+    // Add bookmark
+    question.bookmarks.push(req.user._id);
+  }
+
+  await question.save();
+
+  res.json({
+    success: true,
+    data: {
+      isBookmarked: !hasBookmarked
+    }
+  });
+});
+
+// @desc    Add answer to question
+// @route   POST /api/questions/:id/answers
+// @access  Private
+const addAnswer = asyncHandler(async (req, res) => {
+  const { content } = req.body;
+
+  if (!content) {
+    return res.status(400).json({
+      success: false,
+      message: 'Answer content is required'
+    });
+  }
+
+  const question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  const answer = {
+    content,
+    user: req.user._id
+  };
+
+  question.answers.push(answer);
+  await question.save();
+
+  // Populate the newly added answer
+  await question.populate('answers.user', 'name avatar');
+
+  const newAnswer = question.answers[question.answers.length - 1];
+
+  res.status(201).json({
+    success: true,
+    data: newAnswer
+  });
+});
+
+// @desc    Like/Unlike answer
+// @route   POST /api/questions/:id/answers/:answerId/like
+// @access  Private
+const likeAnswer = asyncHandler(async (req, res) => {
+  const question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  const answer = question.answers.id(req.params.answerId);
+
+  if (!answer) {
+    return res.status(404).json({
+      success: false,
+      message: 'Answer not found'
+    });
+  }
+
+  const hasLiked = answer.likes.includes(req.user._id);
+
+  if (hasLiked) {
+    // Unlike
+    answer.likes.pull(req.user._id);
+  } else {
+    // Like
+    answer.likes.push(req.user._id);
+  }
+
+  await question.save();
+
+  res.json({
+    success: true,
+    data: {
+      likes: answer.likes.length,
+      isLiked: !hasLiked
+    }
+  });
+});
+
+// @desc    Accept answer
+// @route   PUT /api/questions/:id/answers/:answerId/accept
+// @access  Private
+const acceptAnswer = asyncHandler(async (req, res) => {
+  const question = await Question.findById(req.params.id);
+
+  if (!question) {
+    return res.status(404).json({
+      success: false,
+      message: 'Question not found'
+    });
+  }
+
+  // Check if user owns the question
+  if (question.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Not authorized to accept answers for this question'
+    });
+  }
+
+  const answer = question.answers.id(req.params.answerId);
+
+  if (!answer) {
+    return res.status(404).json({
+      success: false,
+      message: 'Answer not found'
+    });
+  }
+
+  // Unaccept all other answers first
+  question.answers.forEach(ans => {
+    ans.isAccepted = false;
+  });
+
+  // Accept this answer
+  answer.isAccepted = true;
+  question.isAnswered = true;
+
+  await question.save();
+
+  res.json({
+    success: true,
+    data: answer
+  });
+});
+
+// @desc    Search questions
+// @route   GET /api/questions/search
+// @access  Public
+const searchQuestions = asyncHandler(async (req, res) => {
+  const { q, tag, page = 1, limit = 10 } = req.query;
+  const skip = (page - 1) * limit;
+
+  let query = {};
+
+  if (q) {
+    query.$text = { $search: q };
+  }
+
+  if (tag) {
+    query.tags = { $in: [new RegExp(tag, 'i')] };
+  }
+
+  const questions = await Question.find(query)
+    .populate('user', 'name avatar')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit))
+    .lean();
+
+  const total = await Question.countDocuments(query);
+
+  // Add computed fields for the requesting user
+  if (req.user) {
+    questions.forEach(question => {
+      question.isLiked = question.likes.includes(req.user._id);
+      question.isBookmarked = question.bookmarks.includes(req.user._id);
+    });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      questions,
+      pagination: {
+        page: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalQuestions: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrev: page > 1
+      }
+    }
+  });
+});
+
+module.exports = {
+  getQuestions,
+  getQuestion,
+  createQuestion,
+  updateQuestion,
+  deleteQuestion,
+  likeQuestion,
+  bookmarkQuestion,
+  addAnswer,
+  likeAnswer,
+  acceptAnswer,
+  searchQuestions
+};
+
+
+const User = require('../models/User');
+const Post = require('../models/Post');
+
+// @desc    Get user profile
+// @route   GET /api/users/:userId
+// @access  Private
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId)
+      .select('-password')
+      .populate('followers', 'name avatar')
+      .populate('following', 'name avatar')
+      .populate('connections', 'name avatar');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if profile is private and user is not following
+    if (user.isPrivate && 
+        !user.followers.includes(req.user._id) && 
+        !user.connections.includes(req.user._id) &&
+        user._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'This profile is private'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Update user profile
+// @route   PUT /api/users/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: req.body },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    res.json({
+      success: true,
+      data: user,
+      message: 'Profile updated successfully'
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during profile update'
+    });
+  }
+};
+
+// @desc    Follow/Unfollow user
+// @route   POST /api/users/:userId/follow
+// @access  Private
+const followUser = async (req, res) => {
+  try {
+    const userToFollow = await User.findById(req.params.userId);
+    const currentUser = await User.findById(req.user._id);
+
+    if (!userToFollow) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (userToFollow._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot follow yourself'
+      });
+    }
+
+    const isFollowing = currentUser.following.includes(userToFollow._id);
+
+    if (isFollowing) {
+      // Unfollow
+      await User.findByIdAndUpdate(req.user._id, {
+        $pull: { following: userToFollow._id }
+      });
+      await User.findByIdAndUpdate(userToFollow._id, {
+        $pull: { followers: req.user._id }
+      });
+
+      res.json({
+        success: true,
+        message: 'User unfollowed successfully',
+        isFollowing: false
+      });
+    } else {
+      // Follow
+      await User.findByIdAndUpdate(req.user._id, {
+        $addToSet: { following: userToFollow._id }
+      });
+      await User.findByIdAndUpdate(userToFollow._id, {
+        $addToSet: { followers: req.user._id }
+      });
+
+      res.json({
+        success: true,
+        message: 'User followed successfully',
+        isFollowing: true
+      });
+    }
+  } catch (error) {
+    console.error('Follow user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get user posts
+// @route   GET /api/users/:userId/posts
+// @access  Private
+const getUserPosts = async (req, res) => {
+  try {
+    const posts = await Post.find({ user: req.params.userId })
+      .populate('user', 'name avatar')
+      .populate('likes', 'name avatar')
+      .populate('comments.user', 'name avatar')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: posts
+    });
+  } catch (error) {
+    console.error('Get user posts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+module.exports = {
+  getUserProfile,
+  updateProfile,
+  followUser,
+  getUserPosts
+};
+
+
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const protect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      // Get token from header
+      token = req.headers.authorization.split(' ')[1];
+
+      // Verify token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // Get user from token
+      req.user = await User.findById(decoded.id).select('-password');
+      
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      next();
+    } catch (error) {
+      console.error('Token verification error:', error.message);
+      
+      // More specific error messages
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid token'
+        });
+      } else if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token expired'
+        });
+      }
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized, token failed'
+      });
+    }
+  } else {
+    return res.status(401).json({
+      success: false,
+      message: 'Not authorized, no token'
+    });
+  }
+};
+
+module.exports = { protect };
+
+
+const mongoose = require('mongoose');
+
+const connectionSchema = new mongoose.Schema({
+  fromUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  toUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'accepted', 'rejected'],
+    default: 'pending'
+  }
+}, {
+  timestamps: true
+});
+
+// Ensure unique connections
+connectionSchema.index({ fromUser: 1, toUser: 1 }, { unique: true });
+
+module.exports = mongoose.model('Connection', connectionSchema);
+
+
+const mongoose = require('mongoose');
+
+const conversationSchema = new mongoose.Schema({
+  participants: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }],
+  lastMessage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message'
+  },
+  isGroup: {
+    type: Boolean,
+    default: false
+  },
+  groupName: {
+    type: String
+  },
+  groupPhoto: {
+    type: String
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+// Remove the problematic unique index for now
+// We'll handle duplicate prevention in the controller
+
+module.exports = mongoose.model('Conversation', conversationSchema);
+const mongoose = require('mongoose');
+
+const messageSchema = new mongoose.Schema({
+  conversation: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Conversation',
+    required: true
+  },
+  sender: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  content: {
+    type: String,
+    required: true,
+    maxlength: [5000, 'Message content cannot be more than 5000 characters']
+  },
+  messageType: {
+    type: String,
+    enum: ['text', 'image', 'file', 'code'],
+    default: 'text'
+  },
+  fileUrl: {
+    type: String
+  },
+  fileName: {
+    type: String
+  },
+  isRead: {
+    type: Boolean,
+    default: false
+  },
+  readBy: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    readAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
+}, {
+  timestamps: true
+});
+
+// Update lastMessage in conversation when a new message is created
+messageSchema.post('save', async function() {
+  await mongoose.model('Conversation').findByIdAndUpdate(
+    this.conversation,
+    { lastMessage: this._id }
+  );
+});
+
+module.exports = mongoose.model('Message', messageSchema);
+
+
+const mongoose = require('mongoose');
+
+const notificationSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  fromUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['like', 'comment', 'follow', 'connection', 'share', 'mention'],
+    required: true
+  },
+  post: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Post'
+  },
+  comment: {
+    type: String
+  },
+  message: {
+    type: String,
+    required: true
+  },
+  isRead: {
+    type: Boolean,
+    default: false
+  },
+  link: {
+    type: String
+  }
+}, {
+  timestamps: true
+});
+
+// Index for faster queries
+notificationSchema.index({ user: 1, createdAt: -1 });
+notificationSchema.index({ user: 1, isRead: 1 });
+
+module.exports = mongoose.model('Notification', notificationSchema);
+
+
+const mongoose = require('mongoose');
+
+const postSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  content: {
+    type: String,
+    maxlength: [5000, 'Post content cannot be more than 5000 characters']
+  },
+  codeSnippet: {
+    language: String,
+    code: String
+  },
+  image: {
+    type: String
+  },
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  comments: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    content: {
+      type: String,
+      required: true,
+      maxlength: [1000, 'Comment cannot be more than 1000 characters']
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  shares: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  shareCount: {
+    type: Number,
+    default: 0
+  },
+  isShared: {
+    type: Boolean,
+    default: false
+  },
+  originalPost: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Post'
+  },
+  tags: [{
+    type: String
+  }],
+  isPublic: {
+    type: Boolean,
+    default: true
+  }
+}, {
+  timestamps: true
+});
+
+// Update posts count when a post is created
+postSchema.post('save', async function() {
+  await mongoose.model('User').findByIdAndUpdate(
+    this.user,
+    { $inc: { postsCount: 1 } }
+  );
+});
+
+// Update posts count when a post is deleted
+postSchema.post('findOneAndDelete', async function(doc) {
+  if (doc) {
+    await mongoose.model('User').findByIdAndUpdate(
+      doc.user,
+      { $inc: { postsCount: -1 } }
+    );
+  }
+});
+
+module.exports = mongoose.model('Post', postSchema);
+
+
+const mongoose = require('mongoose');
+
+const answerSchema = new mongoose.Schema({
+  content: {
+    type: String,
+    required: [true, 'Answer content is required'],
+    trim: true
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  isAccepted: {
+    type: Boolean,
+    default: false
+  }
+}, {
+  timestamps: true
+});
+
+const questionSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: [true, 'Question title is required'],
+    trim: true,
+    maxlength: [200, 'Title cannot be more than 200 characters']
+  },
+  content: {
+    type: String,
+    required: [true, 'Question content is required'],
+    trim: true
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  tags: [{
+    type: String,
+    trim: true
+  }],
+  answers: [answerSchema],
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  bookmarks: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  views: {
+    type: Number,
+    default: 0
+  },
+  isAnswered: {
+    type: Boolean,
+    default: false
+  }
+}, {
+  timestamps: true
+});
+
+// Index for better search performance
+questionSchema.index({ title: 'text', content: 'text', tags: 'text' });
+questionSchema.index({ user: 1, createdAt: -1 });
+questionSchema.index({ tags: 1 });
+questionSchema.index({ isAnswered: 1 });
+
+// Virtual for answer count
+questionSchema.virtual('answerCount').get(function() {
+  return this.answers.length;
+});
+
+// Virtual for like count
+questionSchema.virtual('likeCount').get(function() {
+  return this.likes.length;
+});
+
+// Method to check if user liked the question
+questionSchema.methods.isLikedBy = function(userId) {
+  return this.likes.includes(userId);
+};
+
+// Method to check if user bookmarked the question
+questionSchema.methods.isBookmarkedBy = function(userId) {
+  return this.bookmarks.includes(userId);
+};
+
+// Static method to get questions with filters
+questionSchema.statics.getQuestions = async function(page = 1, limit = 10, filter = 'all', userId = null) {
+  const skip = (page - 1) * limit;
+  let query = {};
+  
+  switch (filter) {
+    case 'unanswered':
+      query.isAnswered = false;
+      break;
+    case 'popular':
+      // Questions with most answers
+      break;
+    case 'recent':
+    default:
+      // All questions, sorted by recent
+      break;
+  }
+
+  const questions = await this.find(query)
+    .populate('user', 'name avatar')
+    .populate('answers.user', 'name avatar')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+
+  // Add computed fields for the requesting user
+  if (userId) {
+    questions.forEach(question => {
+      question.isLiked = question.likes.includes(userId);
+      question.isBookmarked = question.bookmarks.includes(userId);
+    });
+  }
+
+  const total = await this.countDocuments(query);
+
+  return {
+    questions,
+    pagination: {
+      page,
+      totalPages: Math.ceil(total / limit),
+      totalQuestions: total,
+      hasNext: page < Math.ceil(total / limit),
+      hasPrev: page > 1
+    }
+  };
+};
+
+module.exports = mongoose.model('Question', questionSchema);
+
+
+// models/Story.js
+const mongoose = require('mongoose');
+
+const commentSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  content: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 500
+  },
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }]
+}, {
+  timestamps: true
+});
+
+const storySchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 200
+  },
+  content: {
+    type: String,
+    required: true,
+    maxlength: 10000
+  },
+  author: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  tags: [{
+    type: String,
+    trim: true
+  }],
+  category: {
+    type: String,
+    enum: ['coding', 'career', 'learning', 'project', 'experience', 'tips', 'other'],
+    default: 'other'
+  },
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  comments: [commentSchema],
+  isPublished: {
+    type: Boolean,
+    default: true
+  },
+  readTime: {
+    type: Number, // in minutes
+    default: 1
+  },
+  featuredImage: {
+    type: String, // URL to image
+    default: null
+  }
+}, {
+  timestamps: true
+});
+
+// Index for better query performance
+storySchema.index({ author: 1, createdAt: -1 });
+storySchema.index({ category: 1, createdAt: -1 });
+storySchema.index({ tags: 1 });
+storySchema.index({ likes: -1 });
+
+// Virtual for like count
+storySchema.virtual('likeCount').get(function() {
+  return this.likes.length;
+});
+
+// Virtual for comment count
+storySchema.virtual('commentCount').get(function() {
+  return this.comments.length;
+});
+
+// Calculate read time before saving
+storySchema.pre('save', function(next) {
+  const wordsPerMinute = 200;
+  const wordCount = this.content.split(/\s+/).length;
+  this.readTime = Math.ceil(wordCount / wordsPerMinute);
+  next();
+});
+
+module.exports = mongoose.model('Story', storySchema);
+
+
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const validator = require('validator');
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please add a name'],
+    trim: true,
+    maxlength: [50, 'Name cannot be more than 50 characters']
+  },
+  email: {
+    type: String,
+    required: [true, 'Please add an email'],
+    unique: true,
+    lowercase: true,
+    validate: [validator.isEmail, 'Please provide a valid email']
+  },
+  password: {
+    type: String,
+    required: [true, 'Please add a password'],
+    minlength: [6, 'Password must be at least 6 characters'],
+    select: false
+  },
+  avatar: {
+    type: String,
+    default: ''
+  },
+  bio: {
+    type: String,
+    maxlength: [500, 'Bio cannot be more than 500 characters'],
+    default: ''
+  },
+  location: {
+    type: String,
+    default: ''
+  },
+  website: {
+    type: String,
+    default: ''
+  },
+  company: {
+    type: String,
+    default: ''
+  },
+  position: {
+    type: String,
+    default: ''
+  },
+  education: {
+    type: String,
+    default: ''
+  },
+  skills: [{
+    type: String
+  }],
+  isPrivate: {
+    type: Boolean,
+    default: false
+  },
+  followers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  following: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  connections: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  postsCount: {
+    type: Number,
+    default: 0
+  },
+  isOnline: {
+    type: Boolean,
+    default: false
+  },
+  lastSeen: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: true
+});
+
+// Encrypt password before saving
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+  
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+// Match password
+userSchema.methods.matchPassword = async function(enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+// Update last seen
+userSchema.methods.updateLastSeen = function() {
+  this.lastSeen = new Date();
+  return this.save();
+};
+
+module.exports = mongoose.model('User', userSchema);
+
+
+const express = require('express');
+const { registerUser, loginUser, getMe } = require('../controllers/authController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/register', registerUser);
+router.post('/login', loginUser);
+router.get('/me', protect, getMe);
+
+module.exports = router;
+
+
+const express = require('express');
+const { 
+  sendConnectionRequest, 
+  acceptConnectionRequest, 
+  getConnections, 
+  getSuggestedConnections,
+  getPendingRequests 
+} = require('../controllers/connectionController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/request/:userId', protect, sendConnectionRequest);
+router.put('/accept/:connectionId', protect, acceptConnectionRequest);
+router.get('/', protect, getConnections);
+router.get('/suggestions', protect, getSuggestedConnections);
+router.get('/pending', protect, getPendingRequests);
+
+module.exports = router;
+
+
+const express = require('express');
+const { 
+  getConversations, 
+  getMessages, 
+  sendMessage, 
+  createConversation 
+} = require('../controllers/messageController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.get('/conversations', protect, getConversations);
+router.get('/conversations/:conversationId/messages', protect, getMessages);
+router.post('/conversations/:conversationId/messages', protect, sendMessage);
+router.post('/conversations', protect, createConversation);
+
+module.exports = router;
+
+
+const express = require('express');
+const { 
+  getNotifications, 
+  markAsRead, 
+  markAllAsRead, 
+  deleteNotification,
+  getNotificationCount 
+} = require('../controllers/notificationController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.get('/', protect, getNotifications);
+router.get('/count', protect, getNotificationCount);
+router.put('/read-all', protect, markAllAsRead);
+router.put('/:notificationId/read', protect, markAsRead);
+router.delete('/:notificationId', protect, deleteNotification);
+
+module.exports = router;
+
+
+const express = require('express');
+const { createPost, getPosts, getFollowingPosts, likePost, addComment, deletePost } = require('../controllers/postController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/', protect, createPost);
+router.get('/', protect, getPosts);
+router.get('/following', protect, getFollowingPosts);
+router.post('/:postId/like', protect, likePost);
+router.post('/:postId/comment', protect, addComment);
+router.delete('/:postId', protect, deletePost);
+
+module.exports = router;
+
+
+const express = require('express');
+const {
+  getQuestions,
+  getQuestion,
+  createQuestion,
+  updateQuestion,
+  deleteQuestion,
+  likeQuestion,
+  bookmarkQuestion,
+  addAnswer,
+  likeAnswer,
+  acceptAnswer,
+  searchQuestions
+} = require('../controllers/questionController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+// Public routes
+router.get('/', getQuestions);
+router.get('/search', searchQuestions);
+router.get('/:id', getQuestion);
+
+// Protected routes
+router.post('/', protect, createQuestion);
+router.put('/:id', protect, updateQuestion);
+router.delete('/:id', protect, deleteQuestion);
+router.post('/:id/like', protect, likeQuestion);
+router.post('/:id/bookmark', protect, bookmarkQuestion);
+router.post('/:id/answers', protect, addAnswer);
+router.post('/:id/answers/:answerId/like', protect, likeAnswer);
+router.put('/:id/answers/:answerId/accept', protect, acceptAnswer);
+
+module.exports = router;
+
+
+// routes/stories.js
+const express = require('express');
+const router = express.Router();
+const Story = require('../models/Story');
+const User = require('../models/User'); // Add this import
+const { protect } = require('../middleware/authMiddleware'); // Make sure this matches your export
+
+// @route   GET /api/stories
+// @desc    Get all stories (with pagination and filtering)
+// @access  Public
+router.get('/', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    const category = req.query.category;
+    const tag = req.query.tag;
+    const search = req.query.search;
+
+    let query = { isPublished: true };
+    
+    // Filter by category
+    if (category && category !== 'all') {
+      query.category = category;
+    }
+    
+    // Filter by tag
+    if (tag) {
+      query.tags = { $in: [tag] };
+    }
+    
+    // Search in title and content
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search, 'i')] } }
+      ];
+    }
+
+    const stories = await Story.find(query)
+      .populate('author', 'name avatar bio')
+      .populate('comments.user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Story.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: stories,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching stories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   GET /api/stories/following
+// @desc    Get stories from followed users
+// @access  Private
+router.get('/following', auth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const stories = await Story.find({
+      author: { $in: user.following },
+      isPublished: true
+    })
+      .populate('author', 'name avatar bio')
+      .populate('comments.user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Story.countDocuments({
+      author: { $in: user.following },
+      isPublished: true
+    });
+
+    res.json({
+      success: true,
+      data: stories,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching following stories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   GET /api/stories/user/:userId
+// @desc    Get stories by specific user
+// @access  Public
+router.get('/user/:userId', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const stories = await Story.find({
+      author: req.params.userId,
+      isPublished: true
+    })
+      .populate('author', 'name avatar bio')
+      .populate('comments.user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Story.countDocuments({
+      author: req.params.userId,
+      isPublished: true
+    });
+
+    res.json({
+      success: true,
+      data: stories,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user stories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   GET /api/stories/:id
+// @desc    Get single story
+// @access  Public
+router.get('/:id', async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id)
+      .populate('author', 'name avatar bio')
+      .populate('comments.user', 'name avatar')
+      .populate('likes', 'name avatar');
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: story
+    });
+  } catch (error) {
+    console.error('Error fetching story:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   POST /api/stories
+// @desc    Create a new story
+// @access  Private
+router.post('/', auth, async (req, res) => {
+  try {
+    const { title, content, tags, category, featuredImage } = req.body;
+
+    // Validation
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and content are required'
+      });
+    }
+
+    const story = new Story({
+      title,
+      content,
+      tags: tags || [],
+      category: category || 'other',
+      featuredImage,
+      author: req.user.id
+    });
+
+    await story.save();
+    await story.populate('author', 'name avatar bio');
+
+    res.status(201).json({
+      success: true,
+      data: story,
+      message: 'Story created successfully'
+    });
+  } catch (error) {
+    console.error('Error creating story:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   PUT /api/stories/:id
+// @desc    Update a story
+// @access  Private
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const { title, content, tags, category, featuredImage } = req.body;
+
+    let story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    // Check if user owns the story
+    if (story.author.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this story'
+      });
+    }
+
+    story = await Story.findByIdAndUpdate(
+      req.params.id,
+      {
+        title: title || story.title,
+        content: content || story.content,
+        tags: tags || story.tags,
+        category: category || story.category,
+        featuredImage: featuredImage !== undefined ? featuredImage : story.featuredImage
+      },
+      { new: true, runValidators: true }
+    ).populate('author', 'name avatar bio')
+     .populate('comments.user', 'name avatar');
+
+    res.json({
+      success: true,
+      data: story,
+      message: 'Story updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating story:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   DELETE /api/stories/:id
+// @desc    Delete a story
+// @access  Private
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    // Check if user owns the story
+    if (story.author.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this story'
+      });
+    }
+
+    await Story.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: 'Story deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting story:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   POST /api/stories/:id/like
+// @desc    Like/unlike a story
+// @access  Private
+router.post('/:id/like', auth, async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    const isLiked = story.likes.includes(req.user.id);
+
+    if (isLiked) {
+      // Unlike
+      story.likes = story.likes.filter(
+        like => like.toString() !== req.user.id
+      );
+    } else {
+      // Like
+      story.likes.push(req.user.id);
+    }
+
+    await story.save();
+
+    res.json({
+      success: true,
+      data: {
+        likes: story.likes,
+        likeCount: story.likes.length
+      },
+      isLiked: !isLiked,
+      message: isLiked ? 'Story unliked' : 'Story liked'
+    });
+  } catch (error) {
+    console.error('Error liking story:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   POST /api/stories/:id/comments
+// @desc    Add comment to story
+// @access  Private
+router.post('/:id/comments', auth, async (req, res) => {
+  try {
+    const { content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({
+        success: false,
+        message: 'Comment content is required'
+      });
+    }
+
+    const story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    const comment = {
+      user: req.user.id,
+      content
+    };
+
+    story.comments.push(comment);
+    await story.save();
+
+    // Populate the new comment
+    await story.populate('comments.user', 'name avatar');
+
+    const newComment = story.comments[story.comments.length - 1];
+
+    res.status(201).json({
+      success: true,
+      data: newComment,
+      message: 'Comment added successfully'
+    });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   DELETE /api/stories/:id/comments/:commentId
+// @desc    Delete a comment
+// @access  Private
+router.delete('/:id/comments/:commentId', auth, async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    const comment = story.comments.id(req.params.commentId);
+
+    if (!comment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Comment not found'
+      });
+    }
+
+    // Check if user owns the comment or is the story author
+    if (comment.user.toString() !== req.user.id && story.author.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this comment'
+      });
+    }
+
+    comment.remove();
+    await story.save();
+
+    res.json({
+      success: true,
+      message: 'Comment deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @route   GET /api/stories/categories/all
+// @desc    Get all categories
+// @access  Public
+router.get('/categories/all', async (req, res) => {
+  try {
+    const categories = [
+      { value: 'coding', label: 'Coding', count: await Story.countDocuments({ category: 'coding', isPublished: true }) },
+      { value: 'career', label: 'Career', count: await Story.countDocuments({ category: 'career', isPublished: true }) },
+      { value: 'learning', label: 'Learning', count: await Story.countDocuments({ category: 'learning', isPublished: true }) },
+      { value: 'project', label: 'Project', count: await Story.countDocuments({ category: 'project', isPublished: true }) },
+      { value: 'experience', label: 'Experience', count: await Story.countDocuments({ category: 'experience', isPublished: true }) },
+      { value: 'tips', label: 'Tips & Tricks', count: await Story.countDocuments({ category: 'tips', isPublished: true }) },
+      { value: 'other', label: 'Other', count: await Story.countDocuments({ category: 'other', isPublished: true }) }
+    ];
+
+    res.json({
+      success: true,
+      data: categories
+    });
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+module.exports = router;
+
+
+const express = require('express');
+const { getUserProfile, updateProfile, followUser, getUserPosts } = require('../controllers/userController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.get('/:userId', protect, getUserProfile);
+router.put('/profile', protect, updateProfile);
+router.post('/:userId/follow', protect, followUser);
+router.get('/:userId/posts', protect, getUserPosts);
+
+module.exports = router;
+
+
+const jwt = require('jsonwebtoken');
+
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: '30d',
+  });
+};
+
+module.exports = generateToken;
+
+
+NODE_ENV=development
+PORT=5000
+MONGODB_URI=mongodb+srv://mrazzanand_db_user:ywb83ZVp3BRk%40HG@cluster0.gmc7ifn.mongodb.net/riseup-tech?retryWrites=true&w=majority
+JWT_SECRET=ef785e14a930c19ec6fe457ebe7197779d6ca78dbf304eb5b6aea070abb9eb3954f0d51487c67558b300604c50468bce743fcd670c2cdae3d71e6f28f444ce38
+EMAIL_USER=softriseup@gmail.com
+EMAIL_PASS=uvtn mhui rroy oehj
+CLIENT_URL=http://localhost:5173
+# CLIENT_URL_PROD=
+
+
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
+const connectDB = require('./config/database');
+
+// Route files
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
+const postRoutes = require('./routes/postRoutes');
+const connectionRoutes = require('./routes/connectionRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const questionRoutes = require('./routes/questionRoutes');
+
+// Connect to database
+connectDB();
+
+const app = express();
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use(limiter);
+
+// CORS
+app.use(cors({
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true
+}));
+
+// Body parser middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false }));
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/posts', postRoutes);
+app.use('/api/connections', connectionRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/questions', questionRoutes);
+
+// Health check route
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Server is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Remove the problematic catch-all route for now
+// We'll add proper 404 handling later
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/api/health`);
+});
+

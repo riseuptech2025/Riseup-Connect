@@ -1,7 +1,9 @@
+// server.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 require('dotenv').config();
 
 const connectDB = require('./config/database');
@@ -14,7 +16,8 @@ const connectionRoutes = require('./routes/connectionRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const questionRoutes = require('./routes/questionRoutes');
-
+const uploadRoutes = require('./routes/uploadRoutes'); // Add this
+const imageRoutes = require('./routes/imageRoutes');
 
 // Connect to database
 connectDB();
@@ -22,7 +25,9 @@ connectDB();
 const app = express();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Add this line
+}));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -31,15 +36,26 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CORS
+// CORS configuration
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, path) => {
+    // Set CORS headers for static files
+    res.set('Access-Control-Allow-Origin', process.env.CLIENT_URL || 'http://localhost:5173');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -49,6 +65,8 @@ app.use('/api/connections', connectionRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/questions', questionRoutes);
+app.use('/api/upload', uploadRoutes); // Add this
+app.use('/api/images', imageRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -58,9 +76,6 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
-// Remove the problematic catch-all route for now
-// We'll add proper 404 handling later
 
 const PORT = process.env.PORT || 5000;
 
