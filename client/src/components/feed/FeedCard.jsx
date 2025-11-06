@@ -14,13 +14,14 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const [imageErrors, setImageErrors] = useState({});
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Safe user data access
+  // Safe user data access with better avatar handling
   const userName = post?.user?.name || 'Unknown User';
-  const userAvatar = post?.user?.avatar || post?.user?.name?.charAt(0) || 'U';
-  const userId = post?.user?._id; // Get the user ID for navigation
+  const userAvatar = getAvatarUrl(post?.user?.avatar);
+  const userId = post?.user?._id;
   const postContent = post?.content || '';
   const timestamp = post?.createdAt ? new Date(post.createdAt).toLocaleDateString('en-US', {
     month: 'short',
@@ -32,6 +33,40 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const likesCount = post?.likes?.length || 0;
   const commentsCount = post?.comments?.length || 0;
   const isOwnPost = user?._id === post?.user?._id;
+
+  // Function to properly construct avatar URL
+  function getAvatarUrl(avatar) {
+    if (!avatar) return null;
+    
+    if (avatar.startsWith('http') || avatar.startsWith('https')) {
+      return avatar;
+    }
+    
+    if (avatar.startsWith('/')) {
+      return `${window.location.origin}${avatar}`;
+    }
+    
+    return `${window.location.origin}/uploads/${avatar}`;
+  }
+
+  // Function to get user initials
+  const getUserInitials = (name) => {
+    if (!name) return 'U';
+    return name
+      .split(' ')
+      .map(word => word.charAt(0))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Function to handle image errors
+  const handleImageError = (imageType, userId) => {
+    setImageErrors(prev => ({
+      ...prev,
+      [imageType + userId]: true
+    }));
+  };
 
   // Function to handle user profile navigation
   const handleUserProfileClick = () => {
@@ -48,7 +83,14 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
     
     try {
       setIsLiked(!isLiked);
-      await onLike(post._id);
+      
+      // Check if onLike function is provided before calling it
+      if (onLike && typeof onLike === 'function') {
+        await onLike(post._id);
+      } else {
+        console.warn('onLike function is not provided');
+        // Fallback: You can add direct API call here if needed
+      }
     } catch (error) {
       setIsLiked(!isLiked); // Revert on error
       console.error('Error liking post:', error);
@@ -65,8 +107,13 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
     }
 
     try {
-      await onComment(post._id, commentText);
-      setCommentText('');
+      // Check if onComment function is provided
+      if (onComment && typeof onComment === 'function') {
+        await onComment(post._id, commentText);
+        setCommentText('');
+      } else {
+        console.warn('onComment function is not provided');
+      }
     } catch (error) {
       console.error('Error adding comment:', error);
     }
@@ -105,7 +152,6 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
       }
     } catch (error) {
       console.error('Error sharing:', error);
-      // Fallback for copying
       if (platform === 'copy') {
         const textArea = document.createElement('textarea');
         textArea.value = postUrl;
@@ -131,7 +177,12 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const handleDelete = async () => {
     if (window.confirm('Are you sure you want to delete this post?')) {
       try {
-        await onDelete(post._id);
+        // Check if onDelete function is provided
+        if (onDelete && typeof onDelete === 'function') {
+          await onDelete(post._id);
+        } else {
+          console.warn('onDelete function is not provided');
+        }
       } catch (error) {
         console.error('Error deleting post:', error);
       }
@@ -145,6 +196,9 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
     { platform: 'linkedin', icon: Link2, label: 'LinkedIn', color: 'text-blue-700' },
   ];
 
+  // Check if we should show image or initials for post author
+  const showPostAuthorImage = userAvatar && !imageErrors['postAuthor' + userId];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -155,11 +209,23 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
       <div className="p-4 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
+            {/* User Avatar with actual image or initials */}
             <div 
-              className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold cursor-pointer"
+              className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden cursor-pointer bg-gradient-to-r from-blue-500 to-purple-600"
               onClick={handleUserProfileClick}
             >
-              {userAvatar.charAt(0).toUpperCase()}
+              {showPostAuthorImage ? (
+                <img 
+                  src={userAvatar} 
+                  alt={userName}
+                  className="w-full h-full object-cover"
+                  onError={() => handleImageError('postAuthor', userId)}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white font-semibold text-sm">
+                  {getUserInitials(userName)}
+                </div>
+              )}
             </div>
             <div>
               <h3 
@@ -234,6 +300,9 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
               src={post.image}
               alt="Post content"
               className="rounded-lg w-full h-auto object-cover max-h-96"
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
             />
           </div>
         )}
@@ -319,8 +388,20 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
             {/* Add Comment */}
             <form onSubmit={handleCommentSubmit} className="mb-4">
               <div className="flex space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                  {user?.name?.charAt(0).toUpperCase() || 'U'}
+                {/* Current user avatar in comment input */}
+                <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-gradient-to-r from-blue-500 to-purple-600">
+                  {user?.avatar ? (
+                    <img 
+                      src={getAvatarUrl(user.avatar)} 
+                      alt={user?.name}
+                      className="w-full h-full object-cover"
+                      onError={() => handleImageError('currentUser', user?._id)}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white text-xs font-semibold">
+                      {getUserInitials(user?.name)}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1">
                   <input
@@ -342,37 +423,67 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
             </form>
 
             {/* Comments List */}
-            {post?.comments?.map((comment) => (
-              <div key={comment._id || comment.createdAt} className="flex space-x-3 mb-3">
-                <div 
-                  className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold cursor-pointer"
-                  onClick={() => comment.user?._id && navigate(`/profile/${comment.user._id}`)}
-                >
-                  {comment.user?.name?.charAt(0).toUpperCase() || 'U'}
-                </div>
-                <div className="flex-1">
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg px-4 py-2">
-                    <p 
-                      className="font-medium text-gray-900 dark:text-white text-sm cursor-pointer hover:text-blue-500 dark:hover:text-blue-400"
-                      onClick={() => comment.user?._id && navigate(`/profile/${comment.user._id}`)}
-                    >
-                      {comment.user?.name}
-                    </p>
-                    <p className="text-gray-700 dark:text-gray-300 text-sm">
-                      {comment.content}
+            {post?.comments?.map((comment) => {
+              const commentUserAvatar = getAvatarUrl(comment.user?.avatar);
+              const showCommenterImage = commentUserAvatar && !imageErrors['commenter' + comment.user?._id];
+              
+              return (
+                <div key={comment._id || comment.createdAt} className="flex space-x-3 mb-3">
+                  {/* Commenter avatar */}
+                  <div 
+                    className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-gradient-to-r from-blue-500 to-purple-600 cursor-pointer"
+                    onClick={() => comment.user?._id && navigate(`/profile/${comment.user._id}`)}
+                  >
+                    {showCommenterImage ? (
+                      <img 
+                        src={commentUserAvatar} 
+                        alt={comment.user?.name}
+                        className="w-full h-full object-cover"
+                        onError={() => handleImageError('commenter', comment.user?._id)}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white text-xs font-semibold">
+                        {getUserInitials(comment.user?.name)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg px-4 py-2">
+                      <p 
+                        className="font-medium text-gray-900 dark:text-white text-sm cursor-pointer hover:text-blue-500 dark:hover:text-blue-400"
+                        onClick={() => comment.user?._id && navigate(`/profile/${comment.user._id}`)}
+                      >
+                        {comment.user?.name}
+                      </p>
+                      <p className="text-gray-700 dark:text-gray-300 text-sm">
+                        {comment.content}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {new Date(comment.createdAt).toLocaleDateString()}
                     </p>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {new Date(comment.createdAt).toLocaleDateString()}
-                  </p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
     </motion.div>
   );
 }; 
+
+// Add default props to prevent errors when functions are not provided
+FeedCard.defaultProps = {
+  onLike: async () => {
+    console.warn('onLike function not provided to FeedCard');
+  },
+  onComment: async () => {
+    console.warn('onComment function not provided to FeedCard');
+  },
+  onDelete: async () => {
+    console.warn('onDelete function not provided to FeedCard');
+  }
+};
 
 export default FeedCard;

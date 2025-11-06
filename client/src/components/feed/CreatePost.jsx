@@ -16,6 +16,17 @@ const CreatePost = ({ onPostCreated }) => {
   const fileInputRef = useRef(null);
   const { user } = useAuth();
 
+  // Function to get user initials
+  const getUserInitials = () => {
+    if (!user?.name) return 'U';
+    
+    const nameParts = user.name.split(' ');
+    if (nameParts.length === 1) {
+      return nameParts[0].substring(0, 2).toUpperCase();
+    }
+    return (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase();
+  };
+
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -188,9 +199,18 @@ const CreatePost = ({ onPostCreated }) => {
         onClick={() => setIsOpen(true)}
       >
         <div className="flex items-center space-x-4">
-          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-            {user?.name?.charAt(0).toUpperCase() || 'U'}
-          </div>
+          {/* Profile Picture or Initials */}
+          {user?.profilePicture ? (
+            <img 
+              src={user.profilePicture} 
+              alt={`${user.name}'s profile`}
+              className="w-10 h-10 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+              {getUserInitials()}
+            </div>
+          )}
           <div className="flex-1 text-gray-500 dark:text-gray-400">
             What's on your mind, {user?.name?.split(' ')[0]}?
           </div>
@@ -233,9 +253,18 @@ const CreatePost = ({ onPostCreated }) => {
 
       <form onSubmit={handleSubmitSimple}>
         <div className="flex items-center space-x-3 mb-4">
-          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-            {user?.name?.charAt(0).toUpperCase() || 'U'}
-          </div>
+          {/* Profile Picture or Initials */}
+          {user?.profilePicture ? (
+            <img 
+              src={user.profilePicture} 
+              alt={`${user.name}'s profile`}
+              className="w-10 h-10 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+              {getUserInitials()}
+            </div>
+          )}
           <div>
             <p className="font-medium text-gray-900 dark:text-white">
               {user?.name}
