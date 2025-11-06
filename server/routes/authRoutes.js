@@ -1,10 +1,18 @@
 const express = require('express');
-const { registerUser, loginUser, getMe } = require('../controllers/authController');
+const { 
+  sendOtp, 
+  verifyOtpAndRegister, 
+  resendOtp, 
+  loginUser, 
+  getMe 
+} = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.post('/register', registerUser);
+router.post('/send-otp', sendOtp);
+router.post('/verify-otp', verifyOtpAndRegister);
+router.post('/resend-otp', resendOtp);
 router.post('/login', loginUser);
 router.get('/me', protect, getMe);
 

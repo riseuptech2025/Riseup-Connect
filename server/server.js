@@ -23,6 +23,9 @@ const imageRoutes = require('./routes/imageRoutes');
 connectDB();
 
 const app = express();
+process.on('exit', (code) => {
+  console.log(`⚙️  Node process exiting with code ${code}`);
+});
 
 // Security middleware
 app.use(helmet({
@@ -82,4 +85,14 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+});
+
+
+
+process.on('uncaughtException', (err) => {
+  console.error('💣 Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection:', reason);
 });

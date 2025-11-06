@@ -28,34 +28,116 @@ const Profile = () => {
   const profileInputRef = useRef(null);
   const coverInputRef = useRef(null);
 
-  // Helper function to get proper image URL
+  // Improved helper function to get proper image URL
   const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
+    if (!imagePath || imagePath === '') {
+      console.log('No image path provided');
+      return null;
+    }
+    
+    console.log('Processing image path:', imagePath);
     
     // If it's already a full URL, return as is
     if (imagePath.startsWith('http')) {
+      console.log('Already full URL:', imagePath);
       return imagePath;
     }
     
     // If it's a path starting with /uploads, construct full URL
     if (imagePath.startsWith('/uploads')) {
-      return `http://localhost:5000${imagePath}`;
+      const fullUrl = `http://localhost:5000${imagePath}`;
+      console.log('Constructed from /uploads path:', fullUrl);
+      return fullUrl;
     }
     
-    // For filename only, construct the URL
-    if (imagePath.includes('profile-') || imagePath.includes('cover-')) {
-      const type = imagePath.includes('profile-') ? 'profiles' : 'covers';
-      return `http://localhost:5000/uploads/${type}/${imagePath}`;
+    // For profile images - check various possible formats
+    if (imagePath.includes('profile') || imagePath.includes('avatar')) {
+      // Handle different possible formats:
+      // - "profiles/filename.jpg"
+      // - "filename.jpg" (assuming it's in profiles folder)
+      // - "uploads/profiles/filename.jpg"
+      
+      if (imagePath.includes('profiles/')) {
+        // Path like "profiles/profile-123.jpg"
+        const fullUrl = `http://localhost:5000/uploads/${imagePath}`;
+        console.log('Profile image with profiles/ path:', fullUrl);
+        return fullUrl;
+      } else if (imagePath.startsWith('uploads/')) {
+        // Path like "uploads/profiles/profile-123.jpg"
+        const fullUrl = `http://localhost:5000/${imagePath}`;
+        console.log('Profile image with uploads/ path:', fullUrl);
+        return fullUrl;
+      } else {
+        // Just filename like "profile-123.jpg"
+        const fullUrl = `http://localhost:5000/uploads/profiles/${imagePath}`;
+        console.log('Profile image filename only:', fullUrl);
+        return fullUrl;
+      }
     }
     
-    return null;
+    // For cover images - check various possible formats
+    if (imagePath.includes('cover')) {
+      // Handle different possible formats:
+      // - "covers/filename.jpg"
+      // - "filename.jpg" (assuming it's in covers folder)
+      // - "uploads/covers/filename.jpg"
+      
+      if (imagePath.includes('covers/')) {
+        // Path like "covers/cover-123.jpg"
+        const fullUrl = `http://localhost:5000/uploads/${imagePath}`;
+        console.log('Cover image with covers/ path:', fullUrl);
+        return fullUrl;
+      } else if (imagePath.startsWith('uploads/')) {
+        // Path like "uploads/covers/cover-123.jpg"
+        const fullUrl = `http://localhost:5000/${imagePath}`;
+        console.log('Cover image with uploads/ path:', fullUrl);
+        return fullUrl;
+      } else {
+        // Just filename like "cover-123.jpg"
+        const fullUrl = `http://localhost:5000/uploads/covers/${imagePath}`;
+        console.log('Cover image filename only:', fullUrl);
+        return fullUrl;
+      }
+    }
+    
+    // Default case - try to construct URL
+    const fullUrl = `http://localhost:5000/uploads/${imagePath}`;
+    console.log('Default image URL construction:', fullUrl);
+    return fullUrl;
+  };
+
+  // Function to process user data and ensure proper image URLs
+  const processUserData = (userData) => {
+    if (!userData) return userData;
+    
+    const processedData = { ...userData };
+    
+    // Process avatar
+    if (userData.avatar && userData.avatar !== '') {
+      processedData.avatar = getImageUrl(userData.avatar);
+      console.log('Processed avatar:', processedData.avatar);
+    } else {
+      processedData.avatar = null;
+    }
+    
+    // Process coverImage
+    if (userData.coverImage && userData.coverImage !== '') {
+      processedData.coverImage = getImageUrl(userData.coverImage);
+      console.log('Processed coverImage:', processedData.coverImage);
+    } else {
+      processedData.coverImage = null;
+    }
+    
+    return processedData;
   };
 
   useEffect(() => {
     if (!currentUser) return;
     
     if (isOwnProfile) {
-      setProfileUser(currentUser);
+      // Process current user data to ensure proper image URLs
+      const processedUser = processUserData(currentUser);
+      setProfileUser(processedUser);
       fetchUserPosts(currentUser._id);
       setLoading(false);
     } else if (userId) {
@@ -64,20 +146,24 @@ const Profile = () => {
     }
   }, [userId, currentUser, isOwnProfile]);
 
+  // Debug effect for image loading
+  useEffect(() => {
+    if (profileUser) {
+      console.log('Current Profile User Data:', profileUser);
+      console.log('Avatar URL:', profileUser?.avatar);
+      console.log('Cover URL:', profileUser?.coverImage);
+    }
+  }, [profileUser]);
+
   const fetchUserProfile = async (id) => {
     try {
       setLoading(true);
       const response = await usersAPI.getProfile(id);
       if (response.data.success) {
         const userData = response.data.data;
-        // Ensure image URLs are properly formatted
-        if (userData.avatar) {
-          userData.avatar = getImageUrl(userData.avatar);
-        }
-        if (userData.coverImage) {
-          userData.coverImage = getImageUrl(userData.coverImage);
-        }
-        setProfileUser(userData);
+        // Process user data to ensure proper image URLs
+        const processedUserData = processUserData(userData);
+        setProfileUser(processedUserData);
         setIsFollowing(userData.followers?.some(follower => follower._id === currentUser?._id) || false);
       }
     } catch (error) {
@@ -170,7 +256,9 @@ const Profile = () => {
         skills: editForm.skills.split(',').map(skill => skill.trim()).filter(skill => skill)
       });
       if (response.data.success) {
-        setProfileUser(response.data.data);
+        // Process the updated user data to ensure proper image URLs
+        const processedUserData = processUserData(response.data.data);
+        setProfileUser(processedUserData);
         setIsEditing(false);
       }
     } catch (error) {
@@ -189,8 +277,14 @@ const Profile = () => {
         : await uploadAPI.uploadCoverImage(formData);
 
       if (response.data.success) {
-        // Update local state with proper URL
-        const imageUrl = getImageUrl(response.data.data[type === 'avatar' ? 'avatar' : 'coverImage']);
+        // Get the image path from response
+        const imagePath = response.data.data[type === 'avatar' ? 'avatar' : 'coverImage'];
+        console.log('Upload response image path:', imagePath);
+        
+        // Convert to proper URL using our improved function
+        const imageUrl = getImageUrl(imagePath);
+        console.log('Converted image URL:', imageUrl);
+        
         const updatedUser = { 
           ...profileUser, 
           [type === 'avatar' ? 'avatar' : 'coverImage']: imageUrl
@@ -223,7 +317,7 @@ const Profile = () => {
         // Update local state
         const updatedUser = { 
           ...profileUser, 
-          [type === 'avatar' ? 'avatar' : 'coverImage']: ''
+          [type === 'avatar' ? 'avatar' : 'coverImage']: null
         };
         setProfileUser(updatedUser);
         
@@ -496,7 +590,15 @@ const Profile = () => {
           <div className="grid grid-cols-3 gap-1">
             {mediaPosts.map((post, index) => (
               <motion.div key={post._id} whileHover={{ scale: 1.05 }} className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden cursor-pointer">
-                <img src={post.image} alt={`Post ${index + 1}`} className="w-full h-full object-cover" />
+                <img 
+                  src={post.image} 
+                  alt={`Post ${index + 1}`} 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    console.error('Failed to load post image:', post.image);
+                    e.target.style.display = 'none';
+                  }}
+                />
               </motion.div>
             ))}
           </div>
@@ -550,23 +652,40 @@ const Profile = () => {
   );
 
   const renderCoverImage = () => (
-    <div 
-      className="h-32 md:h-48 bg-gradient-to-r from-blue-500 via-purple-600 to-pink-500 rounded-2xl relative overflow-hidden bg-cover bg-center"
-      style={{ 
-        backgroundImage: profileUser?.coverImage ? `url(${profileUser.coverImage})` : 'none'
-      }}
-    >
-      {isOwnProfile && (
-        <button 
-          onClick={() => setShowImageMenu('cover')}
-          className="absolute bottom-3 right-3 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white dark:hover:bg-gray-800 transition-all flex items-center space-x-1 shadow-lg"
-        >
-          <Camera className="h-3 w-3" />
-          <span>{profileUser?.coverImage ? 'Edit' : 'Add Cover'}</span>
-        </button>
-      )}
-    </div>
-  );
+  <div 
+    className="h-32 md:h-48 bg-gradient-to-r from-blue-500 via-purple-600 to-pink-500 rounded-2xl relative overflow-hidden bg-cover bg-center"
+    style={{ 
+      backgroundImage: profileUser?.coverImage ? `url(${profileUser.coverImage})` : 'none'
+    }}
+  >
+    {isOwnProfile && (
+      <button 
+        onClick={() => setShowImageMenu('cover')}
+        className="absolute bottom-3 right-3 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white dark:hover:bg-gray-800 transition-all flex items-center space-x-1 shadow-lg"
+      >
+        <Camera className="h-3 w-3" />
+        <span>{profileUser?.coverImage ? 'Edit' : 'Add Cover'}</span>
+      </button>
+    )}
+    
+    {/* Fallback if no cover image */}
+    {!profileUser?.coverImage && (
+      <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-600 to-pink-500 flex items-center justify-center">
+        {isOwnProfile ? (
+          <button 
+            onClick={() => setShowImageMenu('cover')}
+            className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg font-medium hover:bg-white dark:hover:bg-gray-800 transition-all flex items-center space-x-2 shadow-lg"
+          >
+            <Camera className="h-4 w-4" />
+            <span>Add Cover Image</span>
+          </button>
+        ) : (
+          <span className="text-white/80 text-sm">No cover image</span>
+        )}
+      </div>
+    )}
+  </div>
+);
 
   const renderAvatar = () => (
     <div className="relative">
@@ -576,6 +695,11 @@ const Profile = () => {
         }`}
         style={{ 
           backgroundImage: profileUser?.avatar ? `url(${profileUser.avatar})` : 'none'
+        }}
+        onError={(e) => {
+          // If image fails to load, remove the background image and show fallback
+          console.error('Failed to load avatar image:', profileUser?.avatar);
+          e.target.style.backgroundImage = 'none';
         }}
       >
         {!profileUser?.avatar && (profileUser?.name?.charAt(0).toUpperCase() || 'U')}
@@ -695,7 +819,12 @@ const Profile = () => {
                   variant={isFollowing ? 'secondary' : 'primary'}
                 />
                 <ActionButton onClick={handleConnect} icon={Users} label="Connect" variant="secondary" />
-                <ActionButton onClick={() => setShowShareMenu(true)} icon={Share} variant="secondary" className="w-12" />
+                <ActionButton 
+                  onClick={() => setShowShareMenu(true)} 
+                  icon={Share} 
+                  label="Share" 
+                  variant="secondary" 
+                />
               </div>
             )}
           </div>
@@ -712,14 +841,20 @@ const Profile = () => {
             className="flex-1"
           />
           <ActionButton onClick={handleConnect} icon={Users} label="Connect" variant="secondary" className="flex-1" />
-          <ActionButton onClick={() => setShowShareMenu(true)} icon={Share} variant="secondary" className="w-12" />
+          <ActionButton 
+            onClick={() => setShowShareMenu(true)} 
+            icon={Share} 
+            label="Share" 
+            variant="secondary" 
+            className="flex-1"
+          />
         </div>
       )}
 
       {isOwnProfile && (
         <div className="flex space-x-3 mb-6">
           <ActionButton onClick={handleEditProfile} icon={Edit3} label="Edit Profile" variant="primary" className="flex-1" />
-          <ActionButton onClick={() => setShowShareMenu(true)} icon={Share} variant="secondary" className="w-12" />
+          <ActionButton onClick={() => setShowShareMenu(true)} icon={Share} label="Share" variant="secondary" className="flex-1" />
         </div>
       )}
 

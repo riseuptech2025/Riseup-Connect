@@ -20,6 +20,7 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { messagesAPI, notificationsAPI } from '../../services/api';
+import logo from '../../assets/logo.svg';
 
 const Navbar = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -154,9 +155,17 @@ const Navbar = () => {
           <div className="flex items-center space-x-6 flex-1">
             {/* Logo */}
             <Link to="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">R</span>
-              </div>
+              <img 
+                src="/logo.svg" 
+                alt="Riseup-Connect Logo" 
+                className="w-8 h-8 object-contain"
+                onError={(e) => {
+                  // Fallback if logo.svg doesn't exist in public folder
+                  console.error('Logo not found in public folder, using fallback');
+                  e.target.style.display = 'none';
+                  // You can add a fallback element here if needed
+                }}
+              />
             </Link>
 
             {/* Search Bar */}
@@ -410,8 +419,17 @@ const Navbar = () => {
         {/* Upper Mobile Navbar - App Name & Search (Same Line) */}
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
-            {/* App Name */}
-            <Link to="/" className="flex-shrink-0">
+            {/* App Name with Logo */}
+            <Link to="/" className="flex items-center space-x-2 flex-shrink-0">
+              <img 
+                src="/logo.svg" 
+                alt="Riseup-Connect Logo" 
+                className="w-6 h-6 object-contain"
+                onError={(e) => {
+                  console.error('Logo not found in public folder, using fallback');
+                  e.target.style.display = 'none';
+                }}
+              />
               <span className="text-lg font-bold text-gray-900 dark:text-white">
                 Riseup-Connect
               </span>

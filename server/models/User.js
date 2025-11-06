@@ -16,11 +16,20 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     validate: [validator.isEmail, 'Please provide a valid email']
   },
+  phone: {
+    type: String,
+    trim: true
+  },
   password: {
     type: String,
     required: [true, 'Please add a password'],
     minlength: [6, 'Password must be at least 6 characters'],
     select: false
+  },
+  bio: {
+    type: String,
+    maxlength: [500, 'Bio cannot be more than 500 characters'],
+    default: ''
   },
   avatar: {
     type: String,
@@ -28,11 +37,6 @@ const userSchema = new mongoose.Schema({
   },
   coverImage: {
     type: String,
-    default: ''
-  },
-  bio: {
-    type: String,
-    maxlength: [500, 'Bio cannot be more than 500 characters'],
     default: ''
   },
   location: {
@@ -59,6 +63,10 @@ const userSchema = new mongoose.Schema({
     type: String
   }],
   isPrivate: {
+    type: Boolean,
+    default: false
+  },
+  isVerified: {
     type: Boolean,
     default: false
   },
@@ -89,7 +97,6 @@ const userSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
-
 
 // Encrypt password before saving
 userSchema.pre('save', async function(next) {

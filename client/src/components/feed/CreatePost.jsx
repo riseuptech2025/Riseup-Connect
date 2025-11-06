@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Image, Code, Smile, Send, X, Upload } from 'lucide-react';
+import { Image, Code, Smile, Send, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { postsAPI } from '../../services/api';
 
@@ -12,6 +12,7 @@ const CreatePost = ({ onPostCreated }) => {
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = useRef(null);
   const { user } = useAuth();
 
@@ -20,17 +21,18 @@ const CreatePost = ({ onPostCreated }) => {
     if (file) {
       // Check file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file (JPEG, PNG, GIF, etc.)');
+        setError('Please select an image file (JPEG, PNG, GIF, etc.)');
         return;
       }
 
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
+        setError('Image size should be less than 5MB');
         return;
       }
 
       setImage(file);
+      setError('');
       
       // Create preview
       const reader = new FileReader();
@@ -57,32 +59,32 @@ const CreatePost = ({ onPostCreated }) => {
     e.preventDefault();
     
     if (!content.trim() && !codeSnippet.code.trim() && !image) {
-      alert('Please add some content to your post');
+      setError('Please add some content to your post');
       return;
     }
 
     try {
       setLoading(true);
+      setError('');
       
-      // Use FormData for file uploads
-      const formData = new FormData();
-      formData.append('content', content.trim());
-      formData.append('isPublic', 'true');
-      
-      if (postType === 'code') {
-        formData.append('codeSnippet', JSON.stringify(codeSnippet));
-      }
-      
-      if (image) {
-        formData.append('image', image);
+      // For now, let's test without image first to isolate the issue
+      const postData = {
+        content: content.trim(),
+        isPublic: true
+      };
+
+      // Add code snippet if it's a code post
+      if (postType === 'code' && codeSnippet.code.trim()) {
+        postData.codeSnippet = codeSnippet;
       }
 
-      const response = await postsAPI.createPost(formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      console.log('🔄 Sending post data:', postData);
+
+      // Test with simple JSON first (no image)
+      const response = await postsAPI.createPost(postData);
       
+      console.log('✅ Post created successfully:', response.data);
+
       if (response.data.success) {
         onPostCreated(response.data.data);
         // Reset form
@@ -94,10 +96,84 @@ const CreatePost = ({ onPostCreated }) => {
           fileInputRef.current.value = '';
         }
         setIsOpen(false);
+        setError('');
       }
     } catch (error) {
-      console.error('Error creating post:', error);
-      alert('Failed to create post. Please try again.');
+      console.error('❌ Error creating post:', error);
+      
+      // Detailed error logging
+      if (error.response) {
+        // Server responded with error status
+        console.error('📊 Server response:', error.response.status);
+        console.error('📄 Response data:', error.response.data);
+        console.error('🔧 Response headers:', error.response.headers);
+        
+        const errorMessage = error.response.data?.message || 
+                            error.response.data?.error ||
+                            `Server error: ${error.response.status}`;
+        setError(errorMessage);
+      } else if (error.request) {
+        // Request was made but no response received
+        console.error('🚫 No response received:', error.request);
+        setError('No response from server. Please check your connection.');
+      } else {
+        // Something else happened
+        console.error('⚙️ Request setup error:', error.message);
+        setError('Failed to create post: ' + error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Simple version without image upload for testing
+  const handleSubmitSimple = async (e) => {
+    e.preventDefault();
+    
+    if (!content.trim() && !codeSnippet.code.trim()) {
+      setError('Please add some content to your post');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      
+      const postData = {
+        content: content.trim(),
+        isPublic: true
+      };
+
+      if (postType === 'code' && codeSnippet.code.trim()) {
+        postData.codeSnippet = codeSnippet;
+      }
+
+      console.log('🔄 Testing simple post creation:', postData);
+
+      const response = await postsAPI.createPost(postData);
+      
+      console.log('✅ Simple post successful:', response.data);
+
+      if (response.data.success) {
+        onPostCreated(response.data.data);
+        setContent('');
+        setCodeSnippet({ language: 'javascript', code: '' });
+        setIsOpen(false);
+        setError('');
+      }
+    } catch (error) {
+      console.error('❌ Simple post failed:', error);
+      
+      if (error.response) {
+        console.error('📊 Error details:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+        setError(`Server error (${error.response.status}): ${error.response.data?.message || 'Unknown error'}`);
+      } else {
+        setError('Network error: ' + error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -134,7 +210,10 @@ const CreatePost = ({ onPostCreated }) => {
           Create Post
         </h3>
         <button
-          onClick={() => setIsOpen(false)}
+          onClick={() => {
+            setIsOpen(false);
+            setError('');
+          }}
           className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           disabled={loading}
         >
@@ -142,7 +221,17 @@ const CreatePost = ({ onPostCreated }) => {
         </button>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      {/* Error Message */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-red-700 dark:text-red-300 text-sm font-medium">Error: {error}</p>
+          <p className="text-red-600 dark:text-red-400 text-xs mt-1">
+            Check browser console for details
+          </p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmitSimple}>
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
             {user?.name?.charAt(0).toUpperCase() || 'U'}
@@ -216,24 +305,12 @@ const CreatePost = ({ onPostCreated }) => {
           </div>
         )}
 
-        {/* Image Preview */}
-        {imagePreview && (
-          <div className="mt-4 relative">
-            <img 
-              src={imagePreview} 
-              alt="Preview" 
-              className="rounded-lg max-h-64 w-full object-cover"
-            />
-            <button
-              type="button"
-              onClick={removeImage}
-              className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm hover:bg-red-600 transition-colors"
-              disabled={loading}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+        {/* Image Upload (Disabled for now) */}
+        <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <p className="text-yellow-700 dark:text-yellow-300 text-sm">
+            <strong>Note:</strong> Image upload is temporarily disabled while we fix the server issues.
+          </p>
+        </div>
 
         {/* Action Buttons */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -241,13 +318,9 @@ const CreatePost = ({ onPostCreated }) => {
             <button
               type="button"
               onClick={triggerImageUpload}
-              className={`p-2 rounded-lg transition-colors ${
-                image 
-                  ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-              disabled={loading}
-              title="Add image"
+              className="p-2 rounded-lg text-gray-400 cursor-not-allowed"
+              disabled={true}
+              title="Image upload temporarily disabled"
             >
               <Image className="h-5 w-5" />
             </button>
@@ -258,7 +331,7 @@ const CreatePost = ({ onPostCreated }) => {
               onChange={handleImageUpload}
               accept="image/*"
               className="hidden"
-              disabled={loading}
+              disabled={true}
             />
 
             <button
@@ -279,7 +352,7 @@ const CreatePost = ({ onPostCreated }) => {
 
           <button
             type="submit"
-            disabled={(!content.trim() && !codeSnippet.code.trim() && !image) || loading}
+            disabled={(!content.trim() && !codeSnippet.code.trim()) || loading}
             className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-2 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (

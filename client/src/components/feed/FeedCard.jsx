@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, MessageCircle, Share, Bookmark, Code, Trash2, Copy, Twitter, Facebook, Link2 } from 'lucide-react';
+import { Bookmark, Code, Trash2, Copy, Twitter, Facebook, Link2 } from 'lucide-react';
+import { GiSelfLove, GiDiscussion } from 'react-icons/gi';
+import { RiShareForwardBoxFill } from 'react-icons/ri';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const [isLiked, setIsLiked] = useState(post?.likes?.some(like => like._id === 'current-user') || false);
@@ -12,10 +15,12 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const [showComments, setShowComments] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   // Safe user data access
   const userName = post?.user?.name || 'Unknown User';
   const userAvatar = post?.user?.avatar || post?.user?.name?.charAt(0) || 'U';
+  const userId = post?.user?._id; // Get the user ID for navigation
   const postContent = post?.content || '';
   const timestamp = post?.createdAt ? new Date(post.createdAt).toLocaleDateString('en-US', {
     month: 'short',
@@ -27,6 +32,13 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
   const likesCount = post?.likes?.length || 0;
   const commentsCount = post?.comments?.length || 0;
   const isOwnPost = user?._id === post?.user?._id;
+
+  // Function to handle user profile navigation
+  const handleUserProfileClick = () => {
+    if (userId) {
+      navigate(`/profile/${userId}`);
+    }
+  };
 
   const handleLike = async () => {
     if (!isAuthenticated) {
@@ -143,11 +155,17 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
       <div className="p-4 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+            <div 
+              className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold cursor-pointer"
+              onClick={handleUserProfileClick}
+            >
               {userAvatar.charAt(0).toUpperCase()}
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">
+              <h3 
+                className="font-semibold text-gray-900 dark:text-white cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                onClick={handleUserProfileClick}
+              >
                 {userName}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -164,7 +182,7 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
                 className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
                 title="Share post"
               >
-                <Share className="h-4 w-4" />
+                <RiShareForwardBoxFill className="h-5 w-5" />
               </button>
               
               {/* Share Dropdown Menu */}
@@ -262,7 +280,7 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
                   : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
             >
-              <Heart className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} />
+              <GiSelfLove className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} />
               <span>Like</span>
             </button>
 
@@ -270,7 +288,7 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
               onClick={() => setShowComments(!showComments)}
               className="flex items-center space-x-2 px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <MessageCircle className="h-5 w-5" />
+              <GiDiscussion className="h-5 w-5" />
               <span>Comment</span>
             </button>
 
@@ -278,7 +296,7 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
               onClick={() => setShowShareMenu(!showShareMenu)}
               className="flex items-center space-x-2 px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <Share className="h-5 w-5" />
+              <RiShareForwardBoxFill className="h-5 w-5" />
               <span>Share</span>
             </button>
           </div>
@@ -326,12 +344,18 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
             {/* Comments List */}
             {post?.comments?.map((comment) => (
               <div key={comment._id || comment.createdAt} className="flex space-x-3 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                <div 
+                  className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold cursor-pointer"
+                  onClick={() => comment.user?._id && navigate(`/profile/${comment.user._id}`)}
+                >
                   {comment.user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
                 <div className="flex-1">
                   <div className="bg-gray-50 dark:bg-gray-700 rounded-lg px-4 py-2">
-                    <p className="font-medium text-gray-900 dark:text-white text-sm">
+                    <p 
+                      className="font-medium text-gray-900 dark:text-white text-sm cursor-pointer hover:text-blue-500 dark:hover:text-blue-400"
+                      onClick={() => comment.user?._id && navigate(`/profile/${comment.user._id}`)}
+                    >
                       {comment.user?.name}
                     </p>
                     <p className="text-gray-700 dark:text-gray-300 text-sm">
@@ -349,6 +373,6 @@ const FeedCard = ({ post, onLike, onComment, onDelete }) => {
       </div>
     </motion.div>
   );
-};
+}; 
 
 export default FeedCard;

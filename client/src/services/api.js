@@ -14,22 +14,39 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Log request for debugging
+    console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, config.data);
+    
     return config;
   },
   (error) => {
+    console.error('❌ Request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Handle token expiration
+// Enhanced response interceptor for better error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url}`, response.data);
+    return response;
+  },
   (error) => {
+    console.error('❌ Response error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
+    
     return Promise.reject(error);
   }
 );
@@ -38,6 +55,9 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   register: (userData) => api.post('/auth/register', userData),
+  sendOtp: (email) => api.post('/auth/send-otp', { email }),
+  verifyOtp: (userData) => api.post('/auth/verify-otp', userData),
+  resendOtp: (email) => api.post('/auth/resend-otp', { email }),
   getMe: () => api.get('/auth/me'),
 };
 
@@ -51,9 +71,13 @@ export const usersAPI = {
   getNetworkStats: () => api.get('/users/network/stats')
 };
 
-// Posts API
+// Posts API - SIMPLIFIED VERSION
 export const postsAPI = {
-  createPost: (postData) => api.post('/posts', postData),
+  createPost: (postData) => {
+    console.log('📦 Creating post with data:', postData);
+    return api.post('/posts', postData);
+  },
+  
   getPosts: (page = 1, limit = 10) => api.get(`/posts?page=${page}&limit=${limit}`),
   getFollowingPosts: (page = 1, limit = 10) => api.get(`/posts/following?page=${page}&limit=${limit}`),
   likePost: (postId) => api.post(`/posts/${postId}/like`),
