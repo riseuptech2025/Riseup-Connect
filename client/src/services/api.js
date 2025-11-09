@@ -95,12 +95,19 @@ export const connectionsAPI = {
   acceptRequest: (connectionId) => api.put(`/connections/accept/${connectionId}`),
 };
 
-// Messages API
+// In your existing services/api.js - add these if not present
 export const messagesAPI = {
   getConversations: () => api.get('/messages/conversations'),
-  getMessages: (conversationId, page = 1) => api.get(`/messages/conversations/${conversationId}/messages?page=${page}`),
-  sendMessage: (conversationId, content) => api.post(`/messages/conversations/${conversationId}/messages`, { content }),
-  createConversation: (participantId) => api.post('/messages/conversations', { participantId }),
+  getMessages: (conversationId, page = 1) => 
+    api.get(`/messages/conversations/${conversationId}/messages?page=${page}`),
+  sendMessage: (conversationId, content) => 
+    api.post(`/messages/conversations/${conversationId}/messages`, { content }),
+  createConversation: (participantId) => 
+    api.post('/messages/conversations', { participantId }),
+  deleteConversation: (conversationId) => 
+    api.delete(`/messages/conversations/${conversationId}`),
+  markAsRead: (conversationId) => 
+    api.put(`/messages/conversations/${conversationId}/read`),
 };
 
 // Notifications API
@@ -148,44 +155,19 @@ export const questionsAPI = {
     api.get(`/questions/search?q=${query}&tag=${tag}&page=${page}&limit=${limit}`)
 };
 
-// stories API
-export const storiesAPI = {
-  getStories: (page = 1, limit = 20) => 
-    api.get(`/stories?page=${page}&limit=${limit}`),
-  
-  getFollowingStories: (page = 1, limit = 20) => 
-    api.get(`/stories/following?page=${page}&limit=${limit}`),
-  
-  getUserStories: (userId = null) => 
-    api.get(userId ? `/stories/user/${userId}` : '/stories/user'),
-  
-  getStory: (storyId) => 
-    api.get(`/stories/${storyId}`),
-  
-  createStory: (storyData) => 
-    api.post('/stories', storyData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    }),
-  
-  updateStory: (storyId, storyData) => 
-    api.put(`/stories/${storyId}`, storyData),
-  
-  deleteStory: (storyId) => 
-    api.delete(`/stories/${storyId}`),
-  
-  likeStory: (storyId) => 
-    api.post(`/stories/${storyId}/like`),
-  
-  addComment: (storyId, content) => 
-    api.post(`/stories/${storyId}/comments`, { content }),
-  
-  deleteComment: (storyId, commentId) => 
-    api.delete(`/stories/${storyId}/comments/${commentId}`),
-  
-  getCategories: () => 
-    api.get('/stories/categories/all')
+// Moments API
+export const momentsAPI = {
+  createMoment: (momentData) => api.post('/moments', momentData),
+  getMomentsFeed: (page = 1, limit = 10) => 
+    api.get(`/moments/feed?page=${page}&limit=${limit}`),
+  getMyMoments: (page = 1, limit = 20) => 
+    api.get(`/moments/my?page=${page}&limit=${limit}`),
+  likeMoment: (momentId) => api.post(`/moments/${momentId}/like`),
+  addComment: (momentId, text) => 
+    api.post(`/moments/${momentId}/comments`, { text }),
+  deleteMoment: (momentId) => api.delete(`/moments/${momentId}`),
+  getMomentStats: () => api.get('/moments/stats')
 };
-
 
 // services/api.js - Add these to your API exports
 export const uploadAPI = {
@@ -197,6 +179,18 @@ export const uploadAPI = {
   }),
   removeProfileImage: () => api.delete('/upload/profile-image'),
   removeCoverImage: () => api.delete('/upload/cover-image')
+};
+
+// Feedback API
+export const feedbackAPI = {
+  submitFeedback: (feedbackData) => api.post('/feedback', feedbackData),
+  getFeedbackHistory: (page = 1, limit = 10) => 
+    api.get(`/feedback/history?page=${page}&limit=${limit}`),
+  getFeedbackStats: () => api.get('/feedback/stats'),
+  getFeedback: (feedbackId) => api.get(`/feedback/${feedbackId}`),
+  updateFeedback: (feedbackId, updateData) => 
+    api.put(`/feedback/${feedbackId}`, updateData),
+  deleteFeedback: (feedbackId) => api.delete(`/feedback/${feedbackId}`)
 };
 
 

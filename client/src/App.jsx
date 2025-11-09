@@ -13,7 +13,9 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ProtectedRoute from './components/ProtectedRoute';
 import Questions from './pages/Questions';
-import Stories from './pages/Stories';
+// import Stories from './pages/Stories';
+import HelpAndSupport from './pages/HelpAndSupport';
+import Feedback from './pages/Feedback';
 
 function App() {
   return (
@@ -24,7 +26,9 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/stories/*" element={<Stories />} />
+              {/* <Route path="/stories/*" element={<Stories />} /> */}
+              <Route path="/help-and-support" element={<HelpAndSupport />} />
+              <Route path="/feedback" element={<Feedback />} />
               <Route path="/*" element={<Layout />}>
                 <Route index element={<Home />} />
                 <Route 
@@ -53,6 +57,15 @@ function App() {
                 />
                 <Route 
                   path="messages" 
+                  element={
+                    <ProtectedRoute>
+                      <Messages />
+                    </ProtectedRoute>
+                  } 
+                />
+                {/* Add this new route for individual conversations */}
+                <Route 
+                  path="messages/:conversationId" 
                   element={
                     <ProtectedRoute>
                       <Messages />

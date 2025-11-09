@@ -18,6 +18,8 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const questionRoutes = require('./routes/questionRoutes');
 const uploadRoutes = require('./routes/uploadRoutes'); // Add this
 const imageRoutes = require('./routes/imageRoutes');
+const feedbackRoutes = require('./routes/feedbackRoutes');
+const momentRoutes = require('./routes/momentRoutes');
 
 // Connect to database
 connectDB();
@@ -70,6 +72,9 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/upload', uploadRoutes); // Add this
 app.use('/api/images', imageRoutes);
+app.use('/api/feedback', feedbackRoutes);
+app.use('/api/moments', momentRoutes);
+
 
 // Health check route
 app.get('/api/health', (req, res) => {

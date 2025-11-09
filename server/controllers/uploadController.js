@@ -1,4 +1,5 @@
 // controllers/uploadController.js
+const multer = require('multer');
 const User = require('../models/User');
 const path = require('path');
 const fs = require('fs');
@@ -87,6 +88,7 @@ const uploadCoverImage = async (req, res) => {
   }
 };
 
+
 // @desc    Remove profile image
 // @route   DELETE /api/upload/profile-image
 // @access  Private
@@ -150,6 +152,86 @@ const removeCoverImage = async (req, res) => {
     });
   }
 };
+
+
+
+// Configure storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = 'uploads/moments';
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, 'moment-' + uniqueSuffix + extension);
+  }
+});
+
+// File filter
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'];
+  
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid file type. Only images and videos are allowed.'), false);
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit
+  }
+});
+
+// Upload moment media
+exports.uploadMomentMedia = [
+  upload.single('file'),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No file uploaded'
+        });
+      }
+
+      // Construct the URL for the uploaded file
+      const fileUrl = `/uploads/moments/${req.file.filename}`;
+
+      res.status(200).json({
+        success: true,
+        message: 'File uploaded successfully',
+        data: {
+          url: fileUrl,
+          filename: req.file.filename,
+          originalName: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype
+        }
+      });
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error uploading file',
+        error: error.message
+      });
+    }
+  }
+];
+
 
 module.exports = {
   uploadProfileImage,

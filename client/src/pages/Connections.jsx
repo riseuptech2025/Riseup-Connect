@@ -128,40 +128,22 @@ const Connections = () => {
   };
 
   const handleMessage = async (userId) => {
-  try {
-    console.log('Starting conversation with user:', userId);
-    
-    // Try to create conversation
-    const response = await messagesAPI.createConversation(userId);
-    
-    if (response.data.success) {
-      const conversation = response.data.data;
-      console.log('Conversation created successfully:', conversation);
+    try {
+      console.log('Starting conversation with user:', userId);
       
-      // Navigate to messages page with the conversation
+      // Simply navigate to messages page - the Messages component will handle finding/create conversation
       navigate('/messages', { 
         state: { 
-          selectedConversation: conversation
+          startConversationWith: userId 
         } 
       });
+      
+    } catch (error) {
+      console.error('Error starting conversation:', error);
+      // Still navigate to messages page even if there's an error
+      navigate('/messages');
     }
-  } catch (error) {
-    console.error('Error starting conversation:', error);
-    
-    // Even if there's an error, navigate to messages page
-    // The conversation might have been created but we got an error response
-    navigate('/messages');
-    
-    // Show user-friendly message
-    const errorMessage = error.response?.data?.message || 'Redirecting to messages...';
-    console.log(errorMessage);
-    
-    // Don't show alert for 500 errors to avoid annoying users
-    if (error.response?.status !== 500) {
-      alert(errorMessage);
-    }
-  }
-};
+  };
 
   const renderUserCard = (user, options = {}) => {
     const {

@@ -379,23 +379,23 @@ const Navbar = () => {
                           <span>Settings</span>
                         </Link>
                         
-                        <Link
-                          to="/help"
+                        {/* <Link
+                          to="/help-and-support"
                           onClick={() => setIsProfileOpen(false)}
                           className="flex items-center space-x-2 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                         >
                           <HelpCircle className="h-4 w-4" />
                           <span>Help & Support</span>
-                        </Link>
+                        </Link> */}
                         
-                        <Link
+                        {/* <Link
                           to="/feedback"
                           onClick={() => setIsProfileOpen(false)}
                           className="flex items-center space-x-2 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                         >
                           <Heart className="h-4 w-4" />
                           <span>Give Feedback</span>
-                        </Link>
+                        </Link> */}
                         
                         <button
                           onClick={handleLogout}
@@ -636,23 +636,23 @@ const Navbar = () => {
                     <span>Settings</span>
                   </Link>
                   
-                  <Link
-                    to="/help"
+                  {/* <Link
+                    to="/help-and-support"
                     onClick={() => setIsProfileOpen(false)}
                     className="flex items-center space-x-2 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   >
                     <HelpCircle className="h-4 w-4" />
                     <span>Help & Support</span>
-                  </Link>
+                  </Link> */}
                   
-                  <Link
+                  {/* <Link
                     to="/feedback"
                     onClick={() => setIsProfileOpen(false)}
                     className="flex items-center space-x-2 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   >
                     <Heart className="h-4 w-4" />
                     <span>Give Feedback</span>
-                  </Link>
+                  </Link> */}
                   
                   <button
                     onClick={handleLogout}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import CreatePost from '../components/feed/CreatePost';
 import FeedCard from '../components/feed/FeedCard';
+import MomentsFeed from '../components/moments/MomentsFeed';
 import { useAuth } from '../contexts/AuthContext';
 import { postsAPI } from '../services/api';
 
@@ -14,11 +15,11 @@ const Home = () => {
   const tabs = [
     { id: 'foryou', label: 'For You' },
     { id: 'following', label: 'Following' },
-    { id: 'stories', label: 'Stories' }
+    { id: 'moments', label: 'Moments' }
   ];
 
   useEffect(() => {
-    if (activeTab !== 'stories') {
+    if (activeTab !== 'moments') {
       fetchPosts();
     }
   }, [activeTab]);
@@ -90,48 +91,8 @@ const Home = () => {
   };
 
   const renderContent = () => {
-    if (activeTab === 'stories') {
-      return (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center py-16"
-        >
-          <div className="w-24 h-24 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <span className="text-3xl">📖</span>
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            Stories Feature Coming Soon!
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-8">
-            We're working on an exciting new Stories feature where you can share your coding journey, 
-            experiences, and insights with the community. Stay tuned!
-          </p>
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6 max-w-md mx-auto">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
-              What to expect:
-            </h3>
-            <ul className="text-blue-800 dark:text-blue-200 text-sm text-left space-y-2">
-              <li className="flex items-center">
-                <span className="mr-2">✨</span>
-                Share 24-hour coding stories
-              </li>
-              <li className="flex items-center">
-                <span className="mr-2">🎥</span>
-                Upload images and short videos
-              </li>
-              <li className="flex items-center">
-                <span className="mr-2">👥</span>
-                Engage with community stories
-              </li>
-              <li className="flex items-center">
-                <span className="mr-2">💬</span>
-                React and comment on stories
-              </li>
-            </ul>
-          </div>
-        </motion.div>
-      );
+    if (activeTab === 'moments') {
+      return <MomentsFeed />;
     } else {
       return (
         <>
@@ -210,15 +171,6 @@ const Home = () => {
             ))}
           </div>
         </div>
-
-        <p className="text-gray-600 dark:text-gray-400">
-          {activeTab === 'foryou' 
-            ? '' 
-            : activeTab === 'following'
-            ? ''
-            : ''
-          }
-        </p>
       </motion.div>
 
       {renderContent()}

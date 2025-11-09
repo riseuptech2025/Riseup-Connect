@@ -10,25 +10,28 @@ const conversationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Message'
   },
-  isGroup: {
-    type: Boolean,
-    default: false
+  createdAt: {
+    type: Date,
+    default: Date.now
   },
-  groupName: {
-    type: String
-  },
-  groupPhoto: {
-    type: String
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
-}, {
-  timestamps: true
 });
 
-// Remove the problematic unique index for now
-// We'll handle duplicate prevention in the controller
+// Compound index to ensure unique participant combinations
+conversationSchema.index({ participants: 1 }, { 
+  unique: true,
+  partialFilterExpression: { 
+    'participants.1': { $exists: true } 
+  }
+});
+
+// Update timestamp on save
+conversationSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
 
 module.exports = mongoose.model('Conversation', conversationSchema);

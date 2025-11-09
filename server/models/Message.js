@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-  conversation: {
+  conversationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Conversation',
     required: true
@@ -14,23 +14,20 @@ const messageSchema = new mongoose.Schema({
   content: {
     type: String,
     required: true,
-    maxlength: [5000, 'Message content cannot be more than 5000 characters']
+    trim: true,
+    maxlength: 1000
   },
   messageType: {
     type: String,
-    enum: ['text', 'image', 'file', 'code'],
+    enum: ['text', 'image', 'file', 'system'],
     default: 'text'
   },
-  fileUrl: {
-    type: String
-  },
-  fileName: {
-    type: String
-  },
-  isRead: {
-    type: Boolean,
-    default: false
-  },
+  attachments: [{
+    url: String,
+    filename: String,
+    fileType: String,
+    size: Number
+  }],
   readBy: [{
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -40,17 +37,23 @@ const messageSchema = new mongoose.Schema({
       type: Date,
       default: Date.now
     }
-  }]
+  }],
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+  editedAt: Date,
+  isDeleted: {
+    type: Boolean,
+    default: false
+  }
 }, {
   timestamps: true
 });
 
-// Update lastMessage in conversation when a new message is created
-messageSchema.post('save', async function() {
-  await mongoose.model('Conversation').findByIdAndUpdate(
-    this.conversation,
-    { lastMessage: this._id }
-  );
-});
+// Index for efficient querying
+messageSchema.index({ conversationId: 1, createdAt: 1 });
+messageSchema.index({ sender: 1 });
+messageSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Message', messageSchema);
