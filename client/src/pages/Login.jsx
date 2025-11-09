@@ -15,6 +15,7 @@ const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  // Handle form submission for email/password login
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -22,6 +23,7 @@ const Login = () => {
     
     console.log('Login form submitted:', formData);
     
+    // Attempt to login with email and password
     const result = await login(formData.email, formData.password);
     
     console.log('Login result:', result);
@@ -37,6 +39,7 @@ const Login = () => {
     setIsLoading(false);
   };
 
+  // Handle input changes and clear errors when user types
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -46,6 +49,22 @@ const Login = () => {
     if (error) setError('');
   };
 
+  // Handle GitHub login - currently commented out
+  const handleGithubLogin = () => {
+    // TODO: Implement GitHub OAuth integration
+    console.log('GitHub login clicked');
+    // Example implementation:
+    // window.location.href = 'https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID';
+  };
+
+  // Handle Twitter login - currently commented out
+  const handleTwitterLogin = () => {
+    // TODO: Implement Twitter OAuth integration
+    console.log('Twitter login clicked');
+    // Example implementation:
+    // window.location.href = 'https://twitter.com/i/oauth2/authorize?client_id=YOUR_CLIENT_ID&response_type=code&scope=tweet.read%20users.read';
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <motion.div
@@ -53,10 +72,16 @@ const Login = () => {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full space-y-8"
       >
-        {/* Header */}
+        {/* Header Section */}
         <div className="text-center">
-          <div className="mx-auto w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4">
-            <span className="text-white text-2xl font-bold">R</span>
+          {/* Logo Container */}
+          <div className="mx-auto w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
+            {/* Logo Image - using public folder */}
+            <img 
+              src="/logo.jpg" 
+              alt="Riseup-Connect Logo" 
+              className="w-full h-full object-cover"
+            />
           </div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
             Welcome back
@@ -66,7 +91,7 @@ const Login = () => {
           </p>
         </div>
 
-        {/* Error Message */}
+        {/* Error Message Display */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
             <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
@@ -75,7 +100,9 @@ const Login = () => {
 
         {/* Login Form */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {/* Form Input Fields */}
           <div className="space-y-4">
+            {/* Email Input */}
             <div>
               <label htmlFor="email" className="sr-only">
                 Email address
@@ -96,6 +123,7 @@ const Login = () => {
               </div>
             </div>
 
+            {/* Password Input */}
             <div>
               <label htmlFor="password" className="sr-only">
                 Password
@@ -113,6 +141,7 @@ const Login = () => {
                   placeholder="Password"
                   disabled={isLoading}
                 />
+                {/* Show/Hide Password Toggle */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -125,6 +154,7 @@ const Login = () => {
             </div>
           </div>
 
+          {/* Remember Me and Forgot Password */}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <input
@@ -146,6 +176,7 @@ const Login = () => {
             </div>
           </div>
 
+          {/* Sign In Button */}
           <div>
             <button
               type="submit"
@@ -160,6 +191,7 @@ const Login = () => {
             </button>
           </div>
 
+          {/* Social Login Section */}
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -172,9 +204,12 @@ const Login = () => {
               </div>
             </div>
 
+            {/* Social Login Buttons - Currently commented out */}
+            {/*
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 type="button"
+                onClick={handleGithubLogin}
                 className="w-full inline-flex justify-center py-3 px-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                 disabled={isLoading}
               >
@@ -182,14 +217,24 @@ const Login = () => {
               </button>
               <button
                 type="button"
+                onClick={handleTwitterLogin}
                 className="w-full inline-flex justify-center py-3 px-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                 disabled={isLoading}
               >
                 <Twitter className="h-5 w-5" />
               </button>
             </div>
+            */}
+            
+            {/* Alternative: Display message about social login availability */}
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Social login options coming soon!
+              </p>
+            </div>
           </div>
 
+          {/* Registration Link */}
           <div className="text-center">
             <span className="text-gray-600 dark:text-gray-400">
               Don't have an account?{' '}

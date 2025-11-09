@@ -24,26 +24,28 @@ const Register = () => {
 
   // Handle OTP input change
   const handleOtpChange = (index, value) => {
+    // Only allow numbers
     if (!/^\d?$/.test(value)) return;
 
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
 
-    // Auto-focus next input
+    // Auto-focus next input when a digit is entered
     if (value && index < 5) {
       document.getElementById(`otp-${index + 1}`).focus();
     }
   };
 
-  // Handle OTP key events
+  // Handle OTP key events for better UX
   const handleOtpKeyDown = (index, e) => {
+    // Move to previous input on backspace if current input is empty
     if (e.key === 'Backspace' && !otp[index] && index > 0) {
       document.getElementById(`otp-${index - 1}`).focus();
     }
   };
 
-  // Send OTP
+  // Send OTP to user's email
   const sendOtp = async () => {
     if (!formData.email) {
       alert('Please enter your email first');
@@ -79,7 +81,7 @@ const Register = () => {
     }, 1000);
   };
 
-  // Resend OTP
+  // Resend OTP functionality
   const resendOtp = async () => {
     if (countdown > 0) return;
 
@@ -103,11 +105,13 @@ const Register = () => {
   const handleBasicInfoSubmit = async (e) => {
     e.preventDefault();
     
+    // Validate passwords match
     if (formData.password !== formData.confirmPassword) {
       alert('Passwords do not match');
       return;
     }
 
+    // Validate password length
     if (formData.password.length < 6) {
       alert('Password must be at least 6 characters long');
       return;
@@ -116,7 +120,7 @@ const Register = () => {
     await sendOtp();
   };
 
-  // Handle OTP verification and registration
+  // Handle OTP verification and final registration
   const handleOtpVerification = async (e) => {
     e.preventDefault();
     
@@ -139,7 +143,7 @@ const Register = () => {
         const { data } = response.data;
         const token = data.token;
         
-        // Store token and user data
+        // Store token and user data in localStorage
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(data));
         
@@ -154,6 +158,7 @@ const Register = () => {
     setIsLoading(false);
   };
 
+  // Handle form input changes
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -165,6 +170,7 @@ const Register = () => {
   const renderBasicInfoForm = () => (
     <form className="mt-8 space-y-6" onSubmit={handleBasicInfoSubmit}>
       <div className="space-y-4">
+        {/* Name Input */}
         <div>
           <label htmlFor="name" className="sr-only">
             Full Name
@@ -184,6 +190,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Email Input */}
         <div>
           <label htmlFor="email" className="sr-only">
             Email address
@@ -203,6 +210,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Phone Input */}
         <div>
           <label htmlFor="phone" className="sr-only">
             Phone Number
@@ -221,6 +229,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Bio Textarea */}
         <div>
           <label htmlFor="bio" className="sr-only">
             Bio
@@ -239,6 +248,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Password Input */}
         <div>
           <label htmlFor="password" className="sr-only">
             Password
@@ -265,6 +275,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Confirm Password Input */}
         <div>
           <label htmlFor="confirmPassword" className="sr-only">
             Confirm Password
@@ -292,6 +303,7 @@ const Register = () => {
         </div>
       </div>
 
+      {/* Terms and Conditions Checkbox */}
       <div className="flex items-center">
         <input
           id="terms"
@@ -308,6 +320,7 @@ const Register = () => {
         </label>
       </div>
 
+      {/* Continue Button */}
       <div>
         <button
           type="submit"
@@ -318,6 +331,7 @@ const Register = () => {
         </button>
       </div>
 
+      {/* Login Link */}
       <div className="text-center">
         <span className="text-gray-600 dark:text-gray-400">
           Already have an account?{' '}
@@ -349,6 +363,7 @@ const Register = () => {
       </div>
 
       <div className="space-y-4">
+        {/* OTP Input Fields */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Enter Verification Code
@@ -369,6 +384,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Resend OTP Button */}
         <div className="text-center">
           <button
             type="button"
@@ -382,6 +398,7 @@ const Register = () => {
         </div>
       </div>
 
+      {/* Back and Verify Buttons */}
       <div className="flex space-x-3">
         <button
           type="button"
@@ -410,8 +427,14 @@ const Register = () => {
       >
         {/* Header */}
         <div className="text-center">
-          <div className="mx-auto w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4">
-            <span className="text-white text-2xl font-bold">R</span>
+          {/* Logo Container */}
+          <div className="mx-auto w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
+            {/* Logo Image - using public folder */}
+            <img 
+              src="/logo.jpg" 
+              alt="Riseup-Connect Logo" 
+              className="w-full h-full object-cover"
+            />
           </div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
             {step === 1 ? 'Create your account' : 'Verify Your Email'}
@@ -421,7 +444,7 @@ const Register = () => {
           </p>
         </div>
 
-        {/* Progress indicator */}
+        {/* Progress Indicator */}
         <div className="flex items-center justify-center space-x-2">
           <div className={`w-3 h-3 rounded-full ${step === 1 ? 'bg-blue-500' : 'bg-green-500'}`}></div>
           <div className={`w-3 h-3 rounded-full ${step === 2 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
